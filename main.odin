@@ -1,4 +1,4 @@
-package test_sdl
+package ambergin
 
 import sdl "vendor:sdl2"
 import sdl_ttf "vendor:sdl2/ttf"
@@ -31,19 +31,19 @@ main :: proc() {
 	defer sdl.DestroyTexture(tex)
 	assert(tex != nil)
 
-	previous_ticks: u32
+
+	frame_timer := create_timer(128)
+
 	previous_qpc: u64
 	qpf := sdl.GetPerformanceFrequency()
+	
+	qpc_history: [32]u64
+	qpc_average: u64
+	pqc_counter := 0;
 
 	should_quit := false
 	for i := 0; !should_quit; i += 1 {
-		current_ticks := sdl.GetTicks()
-		delta_ticks := current_ticks - previous_ticks
-		previous_ticks = current_ticks
-		
-		current_qpc := sdl.GetPerformanceCounter()
-		delta_qpc := current_qpc - previous_qpc
-		previous_qpc = current_qpc
+		update_timer(&frame_timer)
 
 		event: sdl.Event
 		for sdl.PollEvent(&event) != 0 {
@@ -83,8 +83,7 @@ main :: proc() {
 		// Render Text		
 		text_color := sdl.Color{255, 255, 255, 255};
 		render_string(font, renderer, fmt.tprintf("Frame: %d", i), 0, 0, text_color)
-		render_string(font, renderer, fmt.tprintf("Ticks: %d, %d ms", current_ticks, delta_ticks), 0, 16, text_color)
-		render_string(font, renderer, fmt.tprintf("QPC: %d, %d = %f ms", current_qpc, delta_qpc, 1000 * f64(delta_qpc) / f64(qpf)), 0, 32, text_color)
+		render_string(font, renderer, fmt.tprintf("Timer: %f +/- %f (%f)", frame_timer.average, frame_timer.std, frame_timer.ste), 0, 32, text_color)
 		sdl.RenderPresent(renderer);
 	}
 }
