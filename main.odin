@@ -65,8 +65,13 @@ main :: proc() {
 	start_timer(&frame_timer)
 
 	display_write_timer := create_timer(128)
-	divergence_timer := create_timer(128)
+	initial_divergence_timer := create_timer(128)
+	clear_pressure_timer := create_timer(128)
+	jacobi_timer := create_timer(128)
 	gradient_timer := create_timer(128)
+	final_divergence_timer := create_timer(128)
+
+	pressure_iterations := 1
 
 	should_quit := false
 	for frame := u32(0); !should_quit; frame += 1 {
@@ -87,12 +92,12 @@ main :: proc() {
 		}
 
 		{
-			start_timer(&divergence_timer)
-			defer stop_timer(&divergence_timer)
+			start_timer(&initial_divergence_timer)
+			defer stop_timer(&initial_divergence_timer)
+
 			// Calculate divergence
-			for j in 0..<grid_height {
-				for i in 0..<grid_width {
-					if i == 0 || j == 0 do continue
+			for j in 1..<grid_height {
+				for i in 1..<grid_width {
 
 					lower_left := velocity_ping[j-1][i-1]
 					lower_right := velocity_ping[j-1][i]
@@ -104,14 +109,45 @@ main :: proc() {
 					vN := 0.5 * (upper_left.y + upper_right.y)
 					vS := 0.5 * (lower_left.y + lower_right.y)
 
-					divergence[j][i] = (vE - vW) + (vN - vS)
+					divergence[j][i] = -((vE - vW) + (vN - vS))
 				}
+			}
+		}
+		{
+			start_timer(&clear_pressure_timer)
+			defer stop_timer(&clear_pressure_timer)
+
+			for j in 1..<grid_height {
+				for i in 1..<grid_width {
+					pressure_ping[j][i] = 0.0
+				}
+			}
+		}
+		{
+			start_timer(&jacobi_timer)
+			defer stop_timer(&jacobi_timer)
+
+			// Calculate Jacobi
+			for iter := 0; iter < pressure_iterations; iter += 1{
+				for j in 1..<grid_height {
+					for i in 1..<grid_width {
+						pE := pressure_ping[j][i+1] if i < grid_width-1 else 0.0
+						pW := pressure_ping[j][i-1]
+						pN := pressure_ping[j+1][i] if j < grid_height-1 else 0.0
+						pS := pressure_ping[j-1][i]
+
+						p := (divergence[j][i] + pW + pE + pS + pN) / 4.0
+						pressure_pong[j][i] = p
+					}
+				}
+				pressure_ping, pressure_pong = pressure_pong, pressure_ping
 			}
 		}
 
 		{
 			start_timer(&gradient_timer)
 			defer stop_timer(&gradient_timer)
+
 			// Calculate divergence
 			for j in 0..<grid_height {
 				for i in 0..<grid_width {
@@ -126,6 +162,29 @@ main :: proc() {
 					pS := 0.5 * (lower_left + lower_right)
 
 					velocity_pong[j][i] = velocity_ping[j][i] - [2]f32{pE - pW, pN - pS}
+				}
+			}
+		}
+
+		{
+			start_timer(&final_divergence_timer)
+			defer stop_timer(&final_divergence_timer)
+
+			// Calculate divergence
+			for j in 1..<grid_height {
+				for i in 1..<grid_width {
+
+					lower_left := velocity_pong[j-1][i-1]
+					lower_right := velocity_pong[j-1][i]
+					upper_left := velocity_pong[j][i-1]
+					upper_right := velocity_pong[j][i]
+
+					vE := 0.5 * (lower_right.x + upper_right.x)
+					vW := 0.5 * (lower_left.x + upper_left.x)
+					vN := 0.5 * (upper_left.y + upper_right.y)
+					vS := 0.5 * (lower_left.y + lower_right.y)
+
+					divergence[j][i] = -((vE - vW) + (vN - vS))
 				}
 			}
 		}
@@ -179,9 +238,13 @@ main :: proc() {
 		cursor := i32(0)
 		text_color := sdl.Color{255, 255, 255, 255};
 		render_string(font, renderer, fmt.tprintf("Frame: %d", frame), 0, cursor, text_color); cursor += 16
-		render_string(font, renderer, fmt.tprintf("Frame Timer: %f +/- %f (%f) ms", frame_timer.average, frame_timer.std, frame_timer.ste), 0, cursor, text_color); cursor += 16
-		render_string(font, renderer, fmt.tprintf("Display Write Timer: %f +/- %f (%f) ms", display_write_timer.average, display_write_timer.std, display_write_timer.ste), 0, cursor, text_color); cursor += 16
-		render_string(font, renderer, fmt.tprintf("Divergence Timer: %f +/- %f (%f) ms", divergence_timer.average, divergence_timer.std, divergence_timer.ste), 0, cursor, text_color); cursor += 16
+		render_string(font, renderer, fmt.tprintf("Frame Timer:              % 7f +/- %f (%f) ms", frame_timer.average, frame_timer.std, frame_timer.ste), 0, cursor, text_color); cursor += 16
+		render_string(font, renderer, fmt.tprintf("Display Write Timer:      % 7f +/- %f (%f) ms", display_write_timer.average, display_write_timer.std, display_write_timer.ste), 0, cursor, text_color); cursor += 16
+		render_string(font, renderer, fmt.tprintf("Initial Divergence Timer: % 7f +/- %f (%f) ms", initial_divergence_timer.average, initial_divergence_timer.std, initial_divergence_timer.ste), 0, cursor, text_color); cursor += 16
+		render_string(font, renderer, fmt.tprintf("Clear Puressure Timer:    % 7f +/- %f (%f) ms", clear_pressure_timer.average, clear_pressure_timer.std, clear_pressure_timer.ste), 0, cursor, text_color); cursor += 16
+		render_string(font, renderer, fmt.tprintf("Jacobi Timer:             % 7f +/- %f (%f) ms", jacobi_timer.average, jacobi_timer.std, jacobi_timer.ste), 0, cursor, text_color); cursor += 16
+		render_string(font, renderer, fmt.tprintf("Gradient Timer:           % 7f +/- %f (%f) ms", gradient_timer.average, gradient_timer.std, gradient_timer.ste), 0, cursor, text_color); cursor += 16
+		render_string(font, renderer, fmt.tprintf("Final Divergence Timer:   % 7f +/- %f (%f) ms", final_divergence_timer.average, final_divergence_timer.std, final_divergence_timer.ste), 0, cursor, text_color); cursor += 16
 		sdl.RenderPresent(renderer);
 	}
 }
