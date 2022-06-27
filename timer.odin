@@ -22,12 +22,15 @@ create_timer :: proc($N: int) -> Timer(N) where N & (N-1) == 0 {
 	using timer: Timer(N)
 
 	counter_frequency = sdl.GetPerformanceFrequency()
-	previous_counter = sdl.GetPerformanceCounter()
 
 	return timer
 }
 
-update_timer :: proc(using timer: ^Timer($N)) {
+start_timer :: proc(using timer: ^Timer($N)) {
+	previous_counter = sdl.GetPerformanceCounter()
+}
+
+stop_timer :: proc(using timer: ^Timer($N)) {
 	current_counter := sdl.GetPerformanceCounter()
 	delta_counter := current_counter - previous_counter
 	previous_counter = current_counter
