@@ -21,8 +21,8 @@ main :: proc() {
 	defer sdl.DestroyWindow(window)
 	assert(window != nil)
 
-	renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED})
-	//renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
+	//arenderer := sdl.CreateRenderer(window, -1, {.ACCELERATED})
+	renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
 	defer sdl.DestroyRenderer(renderer)
 	assert(renderer != nil)
 
@@ -31,15 +31,8 @@ main :: proc() {
 	defer sdl.DestroyTexture(tex)
 	assert(tex != nil)
 
-
 	frame_timer := create_timer(128)
 
-	previous_qpc: u64
-	qpf := sdl.GetPerformanceFrequency()
-	
-	qpc_history: [32]u64
-	qpc_average: u64
-	pqc_counter := 0;
 
 	should_quit := false
 	for i := 0; !should_quit; i += 1 {
