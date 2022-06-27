@@ -90,6 +90,15 @@ main :: proc() {
 				if event.key.keysym.scancode == .ESCAPE && event.key.state == sdl.PRESSED {
 					should_quit = true
 				}
+
+				if event.key.keysym.scancode == .RIGHT && event.key.state == sdl.PRESSED {
+					pressure_iterations += 1
+				}
+				if event.key.keysym.scancode == .LEFT  && event.key.state == sdl.PRESSED {
+					pressure_iterations -= 1
+				}
+
+				pressure_iterations = max(0, pressure_iterations)
 			}
 		}
 
@@ -268,6 +277,7 @@ main :: proc() {
 		cursor := i32(0)
 		text_color := sdl.Color{255, 255, 255, 255};
 		render_string(font, renderer, fmt.tprintf("Frame: %d", frame), 0, cursor, text_color); cursor += 16
+		render_string(font, renderer, fmt.tprintf("Iterations: %d", pressure_iterations), 0, cursor, text_color); cursor += 16
 		render_string(font, renderer, fmt.tprintf("Frame Timer:              % 7f +/- %f (%f) ms", frame_timer.average, frame_timer.std, frame_timer.ste), 0, cursor, text_color); cursor += 16
 		render_string(font, renderer, fmt.tprintf("Display Write Timer:      % 7f +/- %f (%f) ms", display_write_timer.average, display_write_timer.std, display_write_timer.ste), 0, cursor, text_color); cursor += 16
 		render_string(font, renderer, fmt.tprintf("Initial Divergence Timer: % 7f +/- %f (%f) ms", initial_divergence_timer.average, initial_divergence_timer.std, initial_divergence_timer.ste), 0, cursor, text_color); cursor += 16
