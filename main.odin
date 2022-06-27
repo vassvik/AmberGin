@@ -40,7 +40,7 @@ main :: proc() {
 		delete(grid)
 	}
 
-	grid_width, grid_height: i32 = 64, 64
+	grid_width, grid_height: i32 = 32, 32
 	velocity_ping := make_2D([2]f32, grid_width, grid_height)
 	velocity_pong := make_2D([2]f32, grid_width, grid_height)
 	{
@@ -66,6 +66,7 @@ main :: proc() {
 
 	display_write_timer := create_timer(128)
 	divergence_timer := create_timer(128)
+	gradient_timer := create_timer(128)
 
 	should_quit := false
 	for frame := u32(0); !should_quit; frame += 1 {
@@ -108,6 +109,27 @@ main :: proc() {
 			}
 		}
 
+		{
+			start_timer(&gradient_timer)
+			defer stop_timer(&gradient_timer)
+			// Calculate divergence
+			for j in 0..<grid_height {
+				for i in 0..<grid_width {
+					lower_left := pressure_ping[j][i]
+					lower_right := pressure_ping[j][i+1] if i < grid_width-1 else 0.0
+					upper_left := pressure_ping[j+1][i] if j < grid_height-1 else 0.0
+					upper_right := pressure_ping[j+1][i+1] if i < grid_width-1 && j < grid_height-1 else 0.0
+
+					pE := 0.5 * (lower_right + upper_right)
+					pW := 0.5 * (lower_left + upper_left)
+					pN := 0.5 * (upper_left + upper_right)
+					pS := 0.5 * (lower_left + lower_right)
+
+					velocity_pong[j][i] = velocity_ping[j][i] - [2]f32{pE - pW, pN - pS}
+				}
+			}
+		}
+
 		// Stream texture
 		{
 			start_timer(&display_write_timer)
@@ -142,7 +164,7 @@ main :: proc() {
 
 			for y in 0..<u32(grid_height) {
 				for x in 0..<u32(grid_width) {
-					locked_pixels[u32(2*grid_width)*y + x] = velocity_to_u32(velocity_ping[y][x])
+					locked_pixels[u32(2*grid_width)*y + x] = velocity_to_u32(velocity_pong[y][x])
 				}
 				for x in 0..<u32(grid_width) {
 					locked_pixels[u32(2*grid_width)*y + x + u32(grid_width)] = divergence_to_u32(divergence[y][x])
