@@ -17,13 +17,13 @@ main :: proc() {
 	defer sdl_ttf.CloseFont(font)
 	assert(font != nil)
 
-	window_width, window_height: i32 = 2*512, 512
+	window_width, window_height: i32 = 2*512, 2*512
 	window := sdl.CreateWindow("Test SDL", 50, 50, window_width, window_height, {.SHOWN})
 	defer sdl.DestroyWindow(window)
 	assert(window != nil)
 
-	//renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED})
-	renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
+	renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED})
+	//renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
 	defer sdl.DestroyRenderer(renderer)
 	assert(renderer != nil)
 
@@ -53,10 +53,11 @@ main :: proc() {
 	}
 
 	divergence := make_2D(f32, grid_width, grid_height)
+	residual := make_2D(f32, grid_width, grid_height)
 	pressure_ping := make_2D(f32, grid_width, grid_height)
 	pressure_pong := make_2D(f32, grid_width, grid_height)
 
-	display_texture := sdl.CreateTexture(renderer, u32(sdl.PixelFormatEnum.ABGR8888), .STREAMING, 2*grid_width, grid_height)
+	display_texture := sdl.CreateTexture(renderer, u32(sdl.PixelFormatEnum.ABGR8888), .STREAMING, 2*grid_width, 2*grid_height)
 	defer sdl.DestroyTexture(display_texture)
 	assert(display_texture != nil)
 
@@ -69,6 +70,7 @@ main :: proc() {
 	clear_pressure_timer := create_timer(128)
 	jacobi_timer := create_timer(128)
 	gradient_timer := create_timer(128)
+	residual_timer := create_timer(128)
 	final_divergence_timer := create_timer(128)
 
 	pressure_iterations := 1
@@ -145,10 +147,29 @@ main :: proc() {
 		}
 
 		{
+			start_timer(&residual_timer)
+			defer stop_timer(&residual_timer)
+
+			// Calculate Residual
+			for j in 1..<grid_height {
+				for i in 1..<grid_width {
+					pE := pressure_ping[j][i+1] if i < grid_width-1 else 0.0
+					pC := pressure_ping[j][i]
+					pW := pressure_ping[j][i-1]
+					pN := pressure_ping[j+1][i] if j < grid_height-1 else 0.0
+					pS := pressure_ping[j-1][i]
+
+					r := divergence[j][i] + pW + pE + pS + pN - 4 * pC
+					residual[j][i] = r
+				}
+			}
+		}
+
+		{
 			start_timer(&gradient_timer)
 			defer stop_timer(&gradient_timer)
 
-			// Calculate divergence
+			// Calculate gradient
 			for j in 0..<grid_height {
 				for i in 0..<grid_width {
 					lower_left := pressure_ping[j][i]
@@ -203,7 +224,7 @@ main :: proc() {
 			assert(pitch == 2*grid_width * size_of([4]u8))
 
 			// Write to pixels
-			locked_pixels := mem.slice_ptr(cast(^u32)locked_pixels_raw, int(2*grid_width) * int(grid_height))
+			locked_pixels := mem.slice_ptr(cast(^u32)locked_pixels_raw, int(2*grid_width) * int(2*grid_height))
 
 			velocity_to_u32 :: proc(v: [2]f32) -> u32 {
 				r := u32(255 * (0.5 + 0.5*v.x))
@@ -229,6 +250,15 @@ main :: proc() {
 					locked_pixels[u32(2*grid_width)*y + x + u32(grid_width)] = divergence_to_u32(divergence[y][x])
 				}
 			}
+
+			for y in 0..<u32(grid_height) {
+				for x in 0..<u32(grid_width) {
+					locked_pixels[u32(2*grid_width)*(y + u32(grid_height)) + x] = divergence_to_u32(pressure_ping[y][x])
+				}
+				for x in 0..<u32(grid_width) {
+					locked_pixels[u32(2*grid_width)*(y + u32(grid_height)) + x + u32(grid_width)] = divergence_to_u32(residual[y][x])
+				}
+			}
 		}
 
 		sdl.RenderClear(renderer);
@@ -243,6 +273,7 @@ main :: proc() {
 		render_string(font, renderer, fmt.tprintf("Initial Divergence Timer: % 7f +/- %f (%f) ms", initial_divergence_timer.average, initial_divergence_timer.std, initial_divergence_timer.ste), 0, cursor, text_color); cursor += 16
 		render_string(font, renderer, fmt.tprintf("Clear Puressure Timer:    % 7f +/- %f (%f) ms", clear_pressure_timer.average, clear_pressure_timer.std, clear_pressure_timer.ste), 0, cursor, text_color); cursor += 16
 		render_string(font, renderer, fmt.tprintf("Jacobi Timer:             % 7f +/- %f (%f) ms", jacobi_timer.average, jacobi_timer.std, jacobi_timer.ste), 0, cursor, text_color); cursor += 16
+		render_string(font, renderer, fmt.tprintf("Residual Timer:           % 7f +/- %f (%f) ms", residual_timer.average, residual_timer.std, residual_timer.ste), 0, cursor, text_color); cursor += 16
 		render_string(font, renderer, fmt.tprintf("Gradient Timer:           % 7f +/- %f (%f) ms", gradient_timer.average, gradient_timer.std, gradient_timer.ste), 0, cursor, text_color); cursor += 16
 		render_string(font, renderer, fmt.tprintf("Final Divergence Timer:   % 7f +/- %f (%f) ms", final_divergence_timer.average, final_divergence_timer.std, final_divergence_timer.ste), 0, cursor, text_color); cursor += 16
 		sdl.RenderPresent(renderer);
@@ -251,14 +282,19 @@ main :: proc() {
 
 
 render_string :: proc(font: ^sdl_ttf.Font, renderer: ^sdl.Renderer, str: string, x, y: i32, color: sdl.Color) {
+	// TODO: There seems to be a small memory leak in here? Approximately 100 KB/s
 	cstr := strings.unsafe_string_to_cstring(str)
 
+	// TODO: Surely there's an easier way for text that doesn't literally create a surface and require me to make a texture 
 	text := sdl_ttf.RenderText_Blended(font, cstr, color)
+	defer sdl.FreeSurface(text)
 	assert(text != nil)
 
 	text_tex := sdl.CreateTextureFromSurface(renderer, text)
+	defer sdl.DestroyTexture(text_tex)
 	assert(text_tex != nil)
 
 	rect := sdl.Rect{x, y, text.w, text.h}
 	sdl.RenderCopy(renderer, text_tex, nil, &rect);
 }
+
