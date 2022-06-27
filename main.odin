@@ -27,10 +27,6 @@ main :: proc() {
 	defer sdl.DestroyRenderer(renderer)
 	assert(renderer != nil)
 
-	tex := sdl.CreateTexture(renderer, u32(sdl.PixelFormatEnum.ABGR8888), .STREAMING, window_width, window_height)
-	defer sdl.DestroyTexture(tex)
-	assert(tex != nil)
-
 	frame_timer := create_timer(128)
 
 	make_2D :: proc($T: typeid, M, N: i32, allocator := context.allocator) -> [][]T {
@@ -45,13 +41,19 @@ main :: proc() {
 		delete(grid)
 	}
 
+	downscale := i32(2)
+	grid_width := window_width / downscale
+	grid_height := window_height / downscale
+	velocity_ping := make_2D([2]f32, grid_width, grid_height)
+	velocity_pong := make_2D([2]f32, grid_width, grid_height)
 
-	velocity_ping := make_2D([2]f32, window_width, window_height)
-	velocity_pong := make_2D([2]f32, window_width, window_height)
+	divergence := make_2D(f32, grid_width, grid_height)
+	pressure_ping := make_2D(f32, grid_width, grid_height)
+	pressure_pong := make_2D(f32, grid_width, grid_height)
 
-	divergence := make_2D(f32, window_width, window_height)
-	pressure_ping := make_2D(f32, window_width, window_height)
-	pressure_pong := make_2D(f32, window_width, window_height)
+	tex := sdl.CreateTexture(renderer, u32(sdl.PixelFormatEnum.ABGR8888), .STREAMING, grid_width, grid_height)
+	defer sdl.DestroyTexture(tex)
+	assert(tex != nil)
 
 	should_quit := false
 	for i := u32(0); !should_quit; i += 1 {
@@ -79,19 +81,19 @@ main :: proc() {
 			sdl.LockTexture(tex, nil, &locked_pixels_raw, &pitch)
 			defer sdl.UnlockTexture(tex)
 			assert(locked_pixels_raw != nil)
-			assert(pitch == window_width * size_of([4]u8))
+			assert(pitch == grid_width * size_of([4]u8))
 
 			// Write to pixels
-			locked_pixels := mem.slice_ptr(cast(^u32)locked_pixels_raw, int(window_width) * int(window_height))
+			locked_pixels := mem.slice_ptr(cast(^u32)locked_pixels_raw, int(grid_width) * int(grid_height))
 
 			u8x4_to_u32 :: proc(r, g, b, a: u8) -> u32 {
 				return (u32(r) << 0) | (u32(g) << 8) | (u32(b) << 16) | (u32(a) << 24) 
 			}
 
 			t1 := sdl.GetPerformanceCounter()
-			for y in 0..<u32(window_height) {
-				for x in 0..<u32(window_width) {
-					locked_pixels[u32(window_width)*y + x] = u8x4_to_u32(u8(x + 2*i), u8(y + i), 0, 255)
+			for y in 0..<u32(grid_height) {
+				for x in 0..<u32(grid_width) {
+					locked_pixels[u32(grid_width)*y + x] = u8x4_to_u32(u8(x + 2*i), u8(y + i), 0, 255)
 				}
 			}
 			t2 := sdl.GetPerformanceCounter()
