@@ -66,6 +66,7 @@ main :: proc() {
 	start_timer(&frame_timer)
 
 	display_write_timer := create_timer(128)
+	debug_text_timer := create_timer(128)
 	initial_divergence_timer := create_timer(128)
 	clear_pressure_timer := create_timer(128)
 	jacobi_timer := create_timer(128)
@@ -273,20 +274,25 @@ main :: proc() {
 		sdl.RenderClear(renderer);
 		sdl.RenderCopy(renderer, display_texture, nil, nil);
 
-		// Render Text		
-		cursor := i32(0)
-		text_color := sdl.Color{255, 255, 255, 255};
-		render_string(font, renderer, fmt.tprintf("Frame: %d", frame), 0, cursor, text_color); cursor += 16
-		render_string(font, renderer, fmt.tprintf("Iterations: %d", pressure_iterations), 0, cursor, text_color); cursor += 16
-		render_string(font, renderer, fmt.tprintf("Frame Timer:              % 7f +/- %f (%f) ms", frame_timer.average, frame_timer.std, frame_timer.ste), 0, cursor, text_color); cursor += 16
-		render_string(font, renderer, fmt.tprintf("Display Write Timer:      % 7f +/- %f (%f) ms", display_write_timer.average, display_write_timer.std, display_write_timer.ste), 0, cursor, text_color); cursor += 16
-		render_string(font, renderer, fmt.tprintf("Initial Divergence Timer: % 7f +/- %f (%f) ms", initial_divergence_timer.average, initial_divergence_timer.std, initial_divergence_timer.ste), 0, cursor, text_color); cursor += 16
-		render_string(font, renderer, fmt.tprintf("Clear Puressure Timer:    % 7f +/- %f (%f) ms", clear_pressure_timer.average, clear_pressure_timer.std, clear_pressure_timer.ste), 0, cursor, text_color); cursor += 16
-		render_string(font, renderer, fmt.tprintf("Jacobi Timer:             % 7f +/- %f (%f) ms", jacobi_timer.average, jacobi_timer.std, jacobi_timer.ste), 0, cursor, text_color); cursor += 16
-		render_string(font, renderer, fmt.tprintf("Residual Timer:           % 7f +/- %f (%f) ms", residual_timer.average, residual_timer.std, residual_timer.ste), 0, cursor, text_color); cursor += 16
-		render_string(font, renderer, fmt.tprintf("Gradient Timer:           % 7f +/- %f (%f) ms", gradient_timer.average, gradient_timer.std, gradient_timer.ste), 0, cursor, text_color); cursor += 16
-		render_string(font, renderer, fmt.tprintf("Final Divergence Timer:   % 7f +/- %f (%f) ms", final_divergence_timer.average, final_divergence_timer.std, final_divergence_timer.ste), 0, cursor, text_color); cursor += 16
-		sdl.RenderPresent(renderer);
+		// Render Text	
+		{
+			start_timer(&debug_text_timer)
+			defer stop_timer(&debug_text_timer)
+			cursor := i32(0)
+			text_color := sdl.Color{255, 255, 255, 255};
+			render_string(font, renderer, fmt.tprintf("Frame: %d", frame), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Iterations: %d", pressure_iterations), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Frame Timer:              % 7f +/- %f (%f) ms", frame_timer.average, frame_timer.std, frame_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Display Write Timer:      % 7f +/- %f (%f) ms", display_write_timer.average, display_write_timer.std, display_write_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Initial Divergence Timer: % 7f +/- %f (%f) ms", initial_divergence_timer.average, initial_divergence_timer.std, initial_divergence_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Clear Puressure Timer:    % 7f +/- %f (%f) ms", clear_pressure_timer.average, clear_pressure_timer.std, clear_pressure_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Jacobi Timer:             % 7f +/- %f (%f) ms", jacobi_timer.average, jacobi_timer.std, jacobi_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Residual Timer:           % 7f +/- %f (%f) ms", residual_timer.average, residual_timer.std, residual_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Gradient Timer:           % 7f +/- %f (%f) ms", gradient_timer.average, gradient_timer.std, gradient_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Final Divergence Timer:   % 7f +/- %f (%f) ms", final_divergence_timer.average, final_divergence_timer.std, final_divergence_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Debug Text Timer:         % 7f +/- %f (%f) ms", debug_text_timer.average, debug_text_timer.std, debug_text_timer.ste), 0, cursor, text_color); cursor += 16
+			sdl.RenderPresent(renderer);
+		}	
 	}
 }
 
