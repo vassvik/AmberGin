@@ -17,13 +17,13 @@ main :: proc() {
 	defer sdl_ttf.CloseFont(font)
 	assert(font != nil)
 
-	window_width, window_height: i32 = 1280, 720
+	window_width, window_height: i32 = 512, 512
 	window := sdl.CreateWindow("Test SDL", 50, 50, window_width, window_height, {.SHOWN})
 	defer sdl.DestroyWindow(window)
 	assert(window != nil)
 
-	renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED})
-	//renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
+	//renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED})
+	renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
 	defer sdl.DestroyRenderer(renderer)
 	assert(renderer != nil)
 
@@ -51,9 +51,9 @@ main :: proc() {
 	pressure_ping := make_2D(f32, grid_width, grid_height)
 	pressure_pong := make_2D(f32, grid_width, grid_height)
 
-	tex := sdl.CreateTexture(renderer, u32(sdl.PixelFormatEnum.ABGR8888), .STREAMING, grid_width, grid_height)
-	defer sdl.DestroyTexture(tex)
-	assert(tex != nil)
+	display_texture := sdl.CreateTexture(renderer, u32(sdl.PixelFormatEnum.ABGR8888), .STREAMING, grid_width, grid_height)
+	defer sdl.DestroyTexture(display_texture)
+	assert(display_texture != nil)
 
 	should_quit := false
 	for i := u32(0); !should_quit; i += 1 {
@@ -78,8 +78,8 @@ main :: proc() {
 			// Get texture memory
 			locked_pixels_raw: rawptr
 			pitch: i32
-			sdl.LockTexture(tex, nil, &locked_pixels_raw, &pitch)
-			defer sdl.UnlockTexture(tex)
+			sdl.LockTexture(display_texture, nil, &locked_pixels_raw, &pitch)
+			defer sdl.UnlockTexture(display_texture)
 			assert(locked_pixels_raw != nil)
 			assert(pitch == grid_width * size_of([4]u8))
 
@@ -104,7 +104,7 @@ main :: proc() {
 		}
 
 		sdl.RenderClear(renderer);
-		sdl.RenderCopy(renderer, tex, nil, nil);
+		sdl.RenderCopy(renderer, display_texture, nil, nil);
 
 		// Render Text		
 		text_color := sdl.Color{255, 255, 255, 255};
