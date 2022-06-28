@@ -77,9 +77,22 @@ main :: proc() {
 	final_divergence_timer := create_timer(128)
 
 	pressure_iterations := 1
+	pressure_corrections := 0
+
+	Pressure_Mode :: enum {
+		MAC,
+		Vertex,
+		Wide,
+	}
+	pressure_mode := Pressure_Mode.MAC
+
+	omega := 1.8
+	omega_corrections := 0.8
 
 	key_states: map[sdl.Scancode]bool
 	key_pressed: map[sdl.Scancode]bool
+
+
 
 	should_quit := false
 	for frame := u32(0); !should_quit; frame += 1 {
@@ -106,14 +119,45 @@ main :: proc() {
 				should_quit = true
 			}
 
+			muls: [3]int = {10 if key_states[.LCTRL] else 1, 10 if key_states[.LSHIFT] else 1, 10 if key_states[.LALT] else 1}
+			muls2: [3]int = {10 if !key_states[.LCTRL] else 1, 10 if !key_states[.LSHIFT] else 1, 10 if !key_states[.LALT] else 1}
+
 			if key_pressed[.RIGHT] {
-				pressure_iterations += 1*(10 if key_states[.LCTRL] else 1)*(10 if key_states[.LSHIFT] else 1)*(10 if key_states[.LALT] else 1)
+				pressure_iterations += 1*(muls[0])*(muls[1])*(muls[2])
 			}
 			if key_pressed[.LEFT] {
-				pressure_iterations -= 1*(10 if key_states[.LCTRL] else 1)*(10 if key_states[.LSHIFT] else 1)*(10 if key_states[.LALT] else 1)
+				pressure_iterations -= 1*(muls[0])*(muls[1])*(muls[2])
+			}
+
+			if key_pressed[.UP] {
+				pressure_corrections += 1*(muls[0])*(muls[1])*(muls[2])
+			}
+			if key_pressed[.DOWN] {
+				pressure_corrections -= 1*(muls[0])*(muls[1])*(muls[2])
+			}
+
+			if key_pressed[.K] {
+				omega += 1/f64((muls2[0])*(muls2[1])*(muls2[2]))
+			}
+			if key_pressed[.J] {
+				omega -= 1/f64((muls2[0])*(muls2[1])*(muls2[2]))
+			}
+			if key_pressed[.O] {
+				omega_corrections += 1/f64((muls2[0])*(muls2[1])*(muls2[2]))
+			}
+			if key_pressed[.I] {
+				omega_corrections -= 1/f64((muls2[0])*(muls2[1])*(muls2[2]))
+			}
+
+			if key_pressed[.M] {
+				pressure_mode = Pressure_Mode((int(pressure_mode) + 1) % len(Pressure_Mode))
 			}
 
 			pressure_iterations = max(0, pressure_iterations)
+			pressure_corrections = max(0, pressure_corrections)
+
+			omega = clamp(omega, 0.0, 2.0)
+			omega_corrections = clamp(omega_corrections, 0.0, 2.0)
 		}
 
 		{
@@ -154,18 +198,93 @@ main :: proc() {
 
 			// Calculate Jacobi
 			for iter := 0; iter < pressure_iterations; iter += 1{
-				for j in 1..<grid_height {
-					for i in 1..<grid_width {
-						pE := pressure_ping[j][i+1] if i < grid_width-1 else 0.0
-						pW := pressure_ping[j][i-1]
-						pN := pressure_ping[j+1][i] if j < grid_height-1 else 0.0
-						pS := pressure_ping[j-1][i]
-
-						p := (divergence[j][i] + pW + pE + pS + pN) / 4.0
-						pressure_pong[j][i] = p
+				output := pressure_pong if omega <= 1.0 else pressure_ping
+				defer {
+					if omega <= 1.0 {
+						pressure_ping, pressure_pong = pressure_pong, pressure_ping
 					}
 				}
-				pressure_ping, pressure_pong = pressure_pong, pressure_ping
+
+				for j in 1..<grid_height {
+					for i in 1..<grid_width {
+						switch pressure_mode {
+						case .MAC:
+							pE := pressure_ping[j][i+1] if i < grid_width-1 else 0.0
+							pW := pressure_ping[j][i-1]
+							pN := pressure_ping[j+1][i] if j < grid_height-1 else 0.0
+							pS := pressure_ping[j-1][i]
+							pC  := pressure_ping[j][i]
+
+							p := (divergence[j][i] + pW + pE + pS + pN) / 4.0
+							output[j][i] = linalg.mix(pC, p, f32(omega))
+						case .Vertex:
+							pSW := pressure_ping[j-1][i-1] 
+							pSE := pressure_ping[j-1][i+1] if i < grid_width-1 else 0.0
+							pNW := pressure_ping[j+1][i-1] if j < grid_height-1 else 0.0
+							pNE := pressure_ping[j+1][i+1] if i < grid_width-1 && j < grid_height-1 else 0.0
+							pC  := pressure_ping[j][i]
+
+							p := (2.0 * divergence[j][i] + pSW + pSE + pNW + pNE) / 4.0
+							output[j][i] = linalg.mix(pC, p, f32(omega))
+						case .Wide:
+							pE  := pressure_ping[j][i+1] if i < grid_width-1 else 0.0
+							pW  := pressure_ping[j][i-1]
+							pN  := pressure_ping[j+1][i] if j < grid_height-1 else 0.0
+							pS  := pressure_ping[j-1][i]
+							pSW := pressure_ping[j-1][i-1] 
+							pSE := pressure_ping[j-1][i+1] if i < grid_width-1 else 0.0
+							pNW := pressure_ping[j+1][i-1] if j < grid_height-1 else 0.0
+							pNE := pressure_ping[j+1][i+1] if i < grid_width-1 && j < grid_height-1 else 0.0
+							pC  := pressure_ping[j][i]
+
+							p := (3.0 * divergence[j][i] + pSW + pSE + pNW + pNE + pW + pE + pS + pN) / 8.0
+							output[j][i] = linalg.mix(pC, p, f32(omega))
+						}
+					}
+				}
+			}
+
+			for iter := 0; iter < pressure_corrections; iter += 1 {
+				output := pressure_pong if omega_corrections <= 1.0 else pressure_ping
+				defer if omega_corrections <= 1.0 do pressure_ping, pressure_pong = pressure_pong, pressure_ping
+
+				for j in 1..<grid_height {
+					for i in 1..<grid_width {
+						switch Pressure_Mode.Vertex {
+						case .MAC:
+							pE := pressure_ping[j][i+1] if i < grid_width-1 else 0.0
+							pW := pressure_ping[j][i-1]
+							pN := pressure_ping[j+1][i] if j < grid_height-1 else 0.0
+							pS := pressure_ping[j-1][i]
+							pC  := pressure_ping[j][i]
+
+							p := (divergence[j][i] + pW + pE + pS + pN) / 4.0
+							output[j][i] = linalg.mix(pC, p, f32(omega_corrections))
+						case .Vertex:
+							pSW := pressure_ping[j-1][i-1] 
+							pSE := pressure_ping[j-1][i+1] if i < grid_width-1 else 0.0
+							pNW := pressure_ping[j+1][i-1] if j < grid_height-1 else 0.0
+							pNE := pressure_ping[j+1][i+1] if i < grid_width-1 && j < grid_height-1 else 0.0
+							pC  := pressure_ping[j][i]
+
+							p := (2.0 * divergence[j][i] + pSW + pSE + pNW + pNE) / 4.0
+							output[j][i] = linalg.mix(pC, p, f32(omega_corrections))
+						case .Wide:
+							pE  := pressure_ping[j][i+1] if i < grid_width-1 else 0.0
+							pW  := pressure_ping[j][i-1]
+							pN  := pressure_ping[j+1][i] if j < grid_height-1 else 0.0
+							pS  := pressure_ping[j-1][i]
+							pSW := pressure_ping[j-1][i-1] 
+							pSE := pressure_ping[j-1][i+1] if i < grid_width-1 else 0.0
+							pNW := pressure_ping[j+1][i-1] if j < grid_height-1 else 0.0
+							pNE := pressure_ping[j+1][i+1] if i < grid_width-1 && j < grid_height-1 else 0.0
+							pC  := pressure_ping[j][i]
+
+							p := (3.0 * divergence[j][i] + pSW + pSE + pNW + pNE + pW + pE + pS + pN) / 8.0
+							output[j][i] = linalg.mix(pC, p, f32(omega_corrections))
+						}
+					}
+				}
 			}
 		}
 
@@ -176,14 +295,39 @@ main :: proc() {
 			// Calculate Residual
 			for j in 1..<grid_height {
 				for i in 1..<grid_width {
-					pE := pressure_ping[j][i+1] if i < grid_width-1 else 0.0
-					pC := pressure_ping[j][i]
-					pW := pressure_ping[j][i-1]
-					pN := pressure_ping[j+1][i] if j < grid_height-1 else 0.0
-					pS := pressure_ping[j-1][i]
+					switch pressure_mode {
+					case .MAC:
+						pE := pressure_ping[j][i+1] if i < grid_width-1 else 0.0
+						pC := pressure_ping[j][i]
+						pW := pressure_ping[j][i-1]
+						pN := pressure_ping[j+1][i] if j < grid_height-1 else 0.0
+						pS := pressure_ping[j-1][i]
 
-					r := divergence[j][i] + pW + pE + pS + pN - 4 * pC
-					residual[j][i] = r
+						r := divergence[j][i] + pW + pE + pS + pN - 4 * pC
+						residual[j][i] = r
+					case .Vertex:
+						pSW := pressure_ping[j-1][i-1] 
+						pSE := pressure_ping[j-1][i+1] if i < grid_width-1 else 0.0
+						pNW := pressure_ping[j+1][i-1] if j < grid_height-1 else 0.0
+						pNE := pressure_ping[j+1][i+1] if i < grid_width-1 && j < grid_height-1 else 0.0
+						pC  := pressure_ping[j][i]
+
+						r := 2.0 * divergence[j][i] + pSW + pSE + pNW + pNE - 4 * pC
+						residual[j][i] = r
+					case .Wide:
+						pE  := pressure_ping[j][i+1] if i < grid_width-1 else 0.0
+						pW  := pressure_ping[j][i-1]
+						pN  := pressure_ping[j+1][i] if j < grid_height-1 else 0.0
+						pS  := pressure_ping[j-1][i]
+						pSW := pressure_ping[j-1][i-1] 
+						pSE := pressure_ping[j-1][i+1] if i < grid_width-1 else 0.0
+						pNW := pressure_ping[j+1][i-1] if j < grid_height-1 else 0.0
+						pNE := pressure_ping[j+1][i+1] if i < grid_width-1 && j < grid_height-1 else 0.0
+						pC  := pressure_ping[j][i]
+
+						r := 3.0 * divergence[j][i] + pSW + pSE + pNW + pNE + pW + pE + pS + pN - 8.0 * pC
+						residual[j][i] = r
+					}
 				}
 			}
 		}
@@ -320,7 +464,7 @@ main :: proc() {
 			cursor := i32(0)
 			text_color := sdl.Color{255, 255, 255, 255};
 			render_string(font, renderer, fmt.tprintf("Frame: %d\x00", frame), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Iterations: %d\x00", pressure_iterations), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Iterations: %d (%d), mode: %v, omega: %f (%f)\x00", pressure_iterations, pressure_corrections, pressure_mode, omega, omega_corrections), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Frame              % 7f +/- %f (%f)\x00", frame_timer.average, frame_timer.std, frame_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Display Write      % 7f +/- %f (%f)\x00", display_write_timer.average, display_write_timer.std, display_write_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Initial Divergence % 7f +/- %f (%f)\x00", initial_divergence_timer.average, initial_divergence_timer.std, initial_divergence_timer.ste), 0, cursor, text_color); cursor += 16
