@@ -4,6 +4,8 @@ import sdl "vendor:sdl2"
 import sdl_ttf "vendor:sdl2/ttf"
 import "core:fmt"
 import "core:mem"
+import "core:math"
+import "core:math/linalg"
 import "core:strings"
 
 main :: proc() {
@@ -76,31 +78,42 @@ main :: proc() {
 
 	pressure_iterations := 1
 
+	key_states: map[sdl.Scancode]bool
+	key_pressed: map[sdl.Scancode]bool
+
 	should_quit := false
 	for frame := u32(0); !should_quit; frame += 1 {
 		stop_timer(&frame_timer)
 		start_timer(&frame_timer)
 
 		event: sdl.Event
+		clear(&key_pressed)
 		for sdl.PollEvent(&event) != 0 {
 			#partial switch event.type {
 			case .QUIT:                             
 				should_quit = true
-			case .KEYDOWN, .KEYUP:                  
-				//fmt.println(i, event.type, event.key)
-				if event.key.keysym.scancode == .ESCAPE && event.key.state == sdl.PRESSED {
-					should_quit = true
-				}
-
-				if event.key.keysym.scancode == .RIGHT && event.key.state == sdl.PRESSED {
-					pressure_iterations += 1
-				}
-				if event.key.keysym.scancode == .LEFT  && event.key.state == sdl.PRESSED {
-					pressure_iterations -= 1
-				}
-
-				pressure_iterations = max(0, pressure_iterations)
+			case .KEYDOWN, .KEYUP:       
+			fmt.println(event.key.keysym)           
+				previous_state := key_states[event.key.keysym.scancode]
+				if !previous_state && event.key.state == sdl.PRESSED do key_pressed[event.key.keysym.scancode] = true
+				key_states[event.key.keysym.scancode] = event.key.state == sdl.PRESSED
 			}
+		}
+
+		{
+
+			if key_pressed[.ESCAPE] {
+				should_quit = true
+			}
+
+			if key_pressed[.RIGHT] {
+				pressure_iterations += 1*(10 if key_states[.LCTRL] else 1)*(10 if key_states[.LSHIFT] else 1)*(10 if key_states[.LALT] else 1)
+			}
+			if key_pressed[.LEFT] {
+				pressure_iterations -= 1*(10 if key_states[.LCTRL] else 1)*(10 if key_states[.LSHIFT] else 1)*(10 if key_states[.LALT] else 1)
+			}
+
+			pressure_iterations = max(0, pressure_iterations)
 		}
 
 		{
@@ -244,29 +257,55 @@ main :: proc() {
 				return (r << 0) | (g << 8) | (b << 16) | (a << 24) 
 			}
 
-			divergence_to_u32 :: proc(div: f32) -> u32 {
-				r := u32(255 * clamp(div, 0.0, 1.0))
-				g := u32(255 * clamp(-div, 0.0, 1.0))
+			scalar_to_u32_linear :: proc(scalar: f32) -> u32 {
+				r := u32(255 * clamp(scalar, 0.0, 1.0))
+				g := u32(255 * clamp(-scalar, 0.0, 1.0))
 				b := u32(0)
 				a := u32(255)
 				return (r << 0) | (g << 8) | (b << 16) | (a << 24) 
 			}
+
+			scalar_to_u32_logarithmic :: proc(v: f32) -> u32 {
+				logv := math.log(abs(v), 10.0)
+
+				f := math.floor(logv + 7.0)
+				i := math.floor(4 * ((logv + 7.0) - f))
+
+				c: [3]f32
+			    if (f < 0.0) do c = [3]f32{0.0, 0.0, 0.0};
+			    else if (f < 1.0) do c = linalg.mix([3]f32{1.0, 0.0, 0.0}, [3]f32{1.0, 1.0, 1.0}, i / 4.0);
+			    else if (f < 2.0) do c = linalg.mix([3]f32{0.0, 1.0, 0.0}, [3]f32{1.0, 1.0, 1.0}, i / 4.0);
+			    else if (f < 3.0) do c = linalg.mix([3]f32{0.0, 0.0, 1.0}, [3]f32{1.0, 1.0, 1.0}, i / 4.0);
+			    else if (f < 4.0) do c = linalg.mix([3]f32{1.0, 1.0, 0.0}, [3]f32{1.0, 1.0, 1.0}, i / 4.0);
+			    else if (f < 5.0) do c = linalg.mix([3]f32{1.0, 0.0, 1.0}, [3]f32{1.0, 1.0, 1.0}, i / 4.0);
+			    else if (f < 6.0) do c = linalg.mix([3]f32{0.0, 1.0, 1.0}, [3]f32{1.0, 1.0, 1.0}, i / 4.0);
+			    else if (f < 7.0) do c = linalg.mix([3]f32{1.0, 0.5, 0.0}, [3]f32{1.0, 1.0, 1.0}, i / 4.0);
+			    else if (f < 8.0) do c = linalg.mix([3]f32{1.0, 1.0, 1.0}, [3]f32{1.0, 1.0, 1.0}, i / 4.0);
+			    else do c = [3]f32{1.0, 1.0, 1.0}
+
+				r := u32(255 * clamp(c.x, 0.0, 1.0))
+				g := u32(255 * clamp(c.y, 0.0, 1.0))
+				b := u32(255 * clamp(c.z, 0.0, 1.0))
+				a := u32(255)
+				return (r << 0) | (g << 8) | (b << 16) | (a << 24) 
+			}
+
 
 			for y in 0..<u32(grid_height) {
 				for x in 0..<u32(grid_width) {
 					locked_pixels[u32(2*grid_width)*y + x] = velocity_to_u32(velocity_pong[y][x])
 				}
 				for x in 0..<u32(grid_width) {
-					locked_pixels[u32(2*grid_width)*y + x + u32(grid_width)] = divergence_to_u32(divergence[y][x])
+					locked_pixels[u32(2*grid_width)*y + x + u32(grid_width)] = scalar_to_u32_logarithmic(divergence[y][x])
 				}
 			}
 
 			for y in 0..<u32(grid_height) {
 				for x in 0..<u32(grid_width) {
-					locked_pixels[u32(2*grid_width)*(y + u32(grid_height)) + x] = divergence_to_u32(pressure_ping[y][x])
+					locked_pixels[u32(2*grid_width)*(y + u32(grid_height)) + x] = scalar_to_u32_logarithmic(pressure_ping[y][x])
 				}
 				for x in 0..<u32(grid_width) {
-					locked_pixels[u32(2*grid_width)*(y + u32(grid_height)) + x + u32(grid_width)] = divergence_to_u32(residual[y][x])
+					locked_pixels[u32(2*grid_width)*(y + u32(grid_height)) + x + u32(grid_width)] = scalar_to_u32_logarithmic(residual[y][x])
 				}
 			}
 		}
