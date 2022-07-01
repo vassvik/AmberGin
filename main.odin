@@ -31,8 +31,8 @@ main :: proc() {
 	defer sdl.DestroyWindow(window)
 	assert(window != nil)
 
-	renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED})
-	//renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
+	//renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED})
+	renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
 	defer sdl.DestroyRenderer(renderer)
 	assert(renderer != nil)
 
@@ -61,10 +61,18 @@ main :: proc() {
 		}
 	}
 
-	divergence := make_2D(f32, grid_width, grid_height)
-	residual := make_2D(f32, grid_width, grid_height)
 	pressure_ping := make_2D(f32, grid_width, grid_height)
 	pressure_pong := make_2D(f32, grid_width, grid_height)
+	divergence := make_2D(f32, grid_width, grid_height)
+	residual := make_2D(f32, grid_width, grid_height)
+
+	pressure_ping_half := make_2D(f32, grid_width/2, grid_height/2)
+	pressure_pong_half := make_2D(f32, grid_width/2, grid_height/2)
+	divergence_half := make_2D(f32, grid_width/2, grid_height/2)
+
+	pressure_ping_quarter := make_2D(f32, grid_width/4, grid_height/4)
+	pressure_pong_quarter := make_2D(f32, grid_width/4, grid_height/4)
+	divergence_quarter := make_2D(f32, grid_width/4, grid_height/4)
 
 	display_texture := sdl.CreateTexture(renderer, u32(sdl.PixelFormatEnum.ABGR8888), .STREAMING, 2*grid_width, 2*grid_height)
 	defer sdl.DestroyTexture(display_texture)
@@ -77,10 +85,9 @@ main :: proc() {
 	display_write_timer := create_timer(128)
 	debug_text_timer := create_timer(128)
 	initial_divergence_timer := create_timer(128)
-	clear_pressure_timer := create_timer(128)
 	jacobi_timer := create_timer(128)
+	multigrid_timer := create_timer(128)
 	gradient_timer := create_timer(128)
-	residual_timer := create_timer(128)
 	final_divergence_timer := create_timer(128)
 
 	pressure_iterations := 1
@@ -162,14 +169,65 @@ main :: proc() {
 			omega_corrections = clamp(omega_corrections, 0.0, 2.0)
 		}
 
-		calc_divergence(velocity_ping, divergence, &initial_divergence_timer)
-		clear_pressure(pressure_ping, &clear_pressure_timer)
-		calc_jacobi(&pressure_ping, &pressure_pong, divergence, &jacobi_timer,
-		            pressure_iterations, pressure_corrections, omega, omega_corrections,
-		            pressure_mode)
-		calc_residual(pressure_ping, residual, divergence, &residual_timer, pressure_mode)
+		calc_divergence(velocity_ping, divergence, &initial_divergence_timer, pressure_mode)
+		if true {
+			start_timer(&multigrid_timer)
+			defer stop_timer(&multigrid_timer)
+
+			// Init Full
+			clear_pressure(pressure_ping)
+
+			// Pre-smooth Full
+			calc_iterate(&pressure_ping, &pressure_pong, divergence, 2, 0, 0.8, 0.0, pressure_mode)
+
+			for iter in 0..<pressure_iterations {
+				// Descend Full -> Quarter
+				calc_residual(pressure_ping, pressure_pong, divergence, pressure_mode)
+				calc_restriction(pressure_pong, divergence_half)
+				
+				// Init Half
+				clear_pressure(pressure_ping_half)
+
+				// Pre-smooth Half
+				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, 2, 0, 0.8, 0.0, pressure_mode)
+
+				// Descend Half -> Quarter
+				calc_residual(pressure_ping_half, pressure_pong_half, divergence_half, pressure_mode)
+				calc_restriction(pressure_pong_half, divergence_quarter)
+
+				// Init Quarter
+				clear_pressure(pressure_ping_quarter)
+
+				// Solve Quarter
+				calc_iterate(&pressure_ping_quarter, &pressure_pong_quarter, divergence_quarter, int(max(grid_width, grid_height)) / 4, 0, omega, 0.0, pressure_mode)
+
+				// Ascend Quarter -> Half
+				calc_prolongation(pressure_ping_quarter, pressure_pong_half)
+				for j in 1..<grid_height/2 do for i in 1..<grid_width/2 do pressure_ping_half[j][i] += pressure_pong_half[j][i]
+
+				// Post-smooth Half
+				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, 2, 0, 0.8, 0.0, pressure_mode)
+
+				// Ascend Half -> Full
+				calc_prolongation(pressure_ping_half, pressure_pong)
+				for j in 1..<grid_height do for i in 1..<grid_width do pressure_ping[j][i] += pressure_pong[j][i]
+
+				// Post-smooth Full
+				calc_iterate(&pressure_ping, &pressure_pong, divergence, 2, 0, 0.8, 0.0, pressure_mode)
+			}
+
+			// Corrections
+			calc_iterate(&pressure_ping, &pressure_pong, divergence, 0, pressure_corrections, 0.0, omega_corrections, pressure_mode)
+
+		} else {
+			clear_pressure(pressure_ping)
+			calc_jacobi(&pressure_ping, &pressure_pong, divergence, &jacobi_timer,
+			            pressure_iterations, pressure_corrections, omega, omega_corrections,
+			            pressure_mode)
+		}
+		calc_residual(pressure_ping, residual, divergence, pressure_mode)
 		calc_gradient(pressure_ping, velocity_ping, velocity_pong, &gradient_timer)
-		calc_divergence(velocity_pong, divergence, &final_divergence_timer)
+		calc_divergence(velocity_pong, divergence, &final_divergence_timer, pressure_mode)
 
 		// Stream texture
 		{
@@ -262,9 +320,8 @@ main :: proc() {
 			render_string(font, renderer, fmt.tprintf("Frame              % 7f +/- %f (%f)\x00", frame_timer.average, frame_timer.std, frame_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Display Write      % 7f +/- %f (%f)\x00", display_write_timer.average, display_write_timer.std, display_write_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Initial Divergence % 7f +/- %f (%f)\x00", initial_divergence_timer.average, initial_divergence_timer.std, initial_divergence_timer.ste), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Clear Puressure    % 7f +/- %f (%f)\x00", clear_pressure_timer.average, clear_pressure_timer.std, clear_pressure_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Jacobi             % 7f +/- %f (%f)\x00", jacobi_timer.average, jacobi_timer.std, jacobi_timer.ste), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Residual           % 7f +/- %f (%f)\x00", residual_timer.average, residual_timer.std, residual_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Multigrid          % 7f +/- %f (%f)\x00", multigrid_timer.average, multigrid_timer.std, multigrid_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Gradient           % 7f +/- %f (%f)\x00", gradient_timer.average, gradient_timer.std, gradient_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Final Divergence   % 7f +/- %f (%f)\x00", final_divergence_timer.average, final_divergence_timer.std, final_divergence_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Debug Text         % 7f +/- %f (%f)\x00", debug_text_timer.average, debug_text_timer.std, debug_text_timer.ste), 0, cursor, text_color); cursor += 16
