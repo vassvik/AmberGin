@@ -49,7 +49,7 @@ main :: proc() {
 		delete(grid)
 	}
 
-	grid_width, grid_height: i32 = 32, 32
+	grid_width, grid_height: i32 = 256, 256
 	velocity_ping := make_2D([2]f32, grid_width, grid_height)
 	velocity_pong := make_2D([2]f32, grid_width, grid_height)
 	{
@@ -178,7 +178,7 @@ main :: proc() {
 			clear_pressure(pressure_ping)
 
 			// Pre-smooth Full
-			calc_iterate(&pressure_ping, &pressure_pong, divergence, 2, 0, 0.8, 0.0, pressure_mode)
+			calc_iterate(&pressure_ping, &pressure_pong, divergence, 1, 0, 0.8, 0.0, pressure_mode)
 
 			for iter in 0..<pressure_iterations {
 				// Descend Full -> Quarter
@@ -189,7 +189,7 @@ main :: proc() {
 				clear_pressure(pressure_ping_half)
 
 				// Pre-smooth Half
-				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, 2, 0, 0.8, 0.0, pressure_mode)
+				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, 1, 0, 0.8, 0.0, pressure_mode)
 
 				// Descend Half -> Quarter
 				calc_residual(pressure_ping_half, pressure_pong_half, divergence_half, pressure_mode)
@@ -206,14 +206,14 @@ main :: proc() {
 				for j in 1..<grid_height/2 do for i in 1..<grid_width/2 do pressure_ping_half[j][i] += pressure_pong_half[j][i]
 
 				// Post-smooth Half
-				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, 2, 0, 0.8, 0.0, pressure_mode)
+				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, 12, 0, 0.8, 0.0, pressure_mode)
 
 				// Ascend Half -> Full
 				calc_prolongation(pressure_ping_half, pressure_pong)
 				for j in 1..<grid_height do for i in 1..<grid_width do pressure_ping[j][i] += pressure_pong[j][i]
 
 				// Post-smooth Full
-				calc_iterate(&pressure_ping, &pressure_pong, divergence, 2, 0, 0.8, 0.0, pressure_mode)
+				calc_iterate(&pressure_ping, &pressure_pong, divergence, 6, 0, 0.8, 0.0, pressure_mode)
 			}
 
 			// Corrections
