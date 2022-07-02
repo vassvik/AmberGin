@@ -135,7 +135,7 @@ main :: proc() {
 			case .QUIT:                             
 				should_quit = true
 			case .KEYDOWN, .KEYUP:       
-			fmt.println(event.key.keysym)           
+				//fmt.println(event.key.keysym)           
 				previous_state := key_states[event.key.keysym.scancode]
 				if !previous_state && event.key.state == sdl.PRESSED do key_pressed[event.key.keysym.scancode] = true
 				key_states[event.key.keysym.scancode] = event.key.state == sdl.PRESSED
@@ -249,6 +249,37 @@ main :: proc() {
 		calc_gradient(pressure_ping, velocity_ping, velocity_pong, &gradient_timer)
 		calc_divergence(velocity_pong, divergence, &final_divergence_timer, pressure_mode)
 
+		max_divergence, avg_divergence: f32
+		divergence_bins: [9]f64
+		for j in 1..<grid_height {
+			for i in 1..<grid_width {
+				d := abs(divergence[j][i])
+				switch pressure_mode {
+				case .MAC:    d /= 1.0
+				case .Vertex: d /= 2.0
+				case .Wide:   d /= 3.0
+				}
+
+				logd := math.log(d, 10.0)
+
+				max_divergence = max(d, max_divergence)
+				avg_divergence += d
+
+				divergence_bins[clamp(int(math.floor(logd)) + 8, 0, 8)] += 1
+			}
+		}
+		max_bin, sum_bins: f64 = 0, 0
+		for i in 0..<9 {
+		 	max_bin = max(max_bin, divergence_bins[i])
+		 	sum_bins += divergence_bins[i]
+		}
+		if key_pressed[.TAB] {
+			//fmt.println(divergence_bins)
+			//fmt.println(divergence_bins / max_bin)
+			fmt.printf("%+ 7f\n", 100*divergence_bins / sum_bins)
+		}
+
+		avg_divergence /= f32(grid_width-1)*f32(grid_height-1)
 		// Stream texture
 		{
 			start_timer(&display_write_timer)
@@ -350,6 +381,7 @@ main :: proc() {
 			render_string(font, renderer, fmt.tprintf("Multigrid          % 7f +/- %f (%f)\x00", multigrid_timer.average, multigrid_timer.std, multigrid_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Gradient           % 7f +/- %f (%f)\x00", gradient_timer.average, gradient_timer.std, gradient_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Final Divergence   % 7f +/- %f (%f)\x00", final_divergence_timer.average, final_divergence_timer.std, final_divergence_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Max Divergence: %e, Avg Divergence: %e\x00", max_divergence, avg_divergence), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Debug Text         % 7f +/- %f (%f)\x00", debug_text_timer.average, debug_text_timer.std, debug_text_timer.ste), 0, cursor, text_color); cursor += 16
 			sdl.RenderPresent(renderer);
 		}
