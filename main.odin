@@ -54,11 +54,32 @@ main :: proc() {
 	velocity_pong := make_2D([2]f32, grid_width, grid_height)
 	{
 		source_size := min(grid_width, grid_height) / 4
+		/*
 		for j in (grid_height - source_size)/2..<(grid_height + source_size)/2 {
 			for i in (grid_width - source_size)/2..<(grid_width + source_size)/2 {
 				velocity_ping[j][i].y = 1.0
 			}
 		}
+		*/
+
+		for j in 0..<grid_height  {
+			for i in 0..<grid_width  {
+				x := (f32(i) + 0.5) / f32(grid_width)
+				y := (f32(j) + 0.5) / f32(grid_height)
+				x *= f32(grid_width) / f32(grid_height)
+
+				w := 0.01 * f32(source_size) / f32(grid_height)
+				d := linalg.length([2]f32{x, y} - [2]f32{0.5, 0.5})
+				s := 1.0 - math.smoothstep(-w/2, +w/2, d - 1.0/4.0)
+				//velocity_ping[j][i].x = -2.0*(y - 0.5)*(2.0 * s - 1.0)
+				//velocity_ping[j][i].y = +2.0*(x - 0.5)*(2.0 * s - 1.0)
+
+				velocity_ping[j][i].x = +2.0*(y - 0.5)*(2.0 * s - 1.0)
+				velocity_ping[j][i].y = +2.0*(x - 0.5)*(2.0 * s - 1.0)
+			}
+		}
+		/*
+		*/
 	}
 
 	pressure_ping := make_2D(f32, grid_width, grid_height)
@@ -100,7 +121,6 @@ main :: proc() {
 
 	key_states: map[sdl.Scancode]bool
 	key_pressed: map[sdl.Scancode]bool
-
 
 
 	should_quit := false
