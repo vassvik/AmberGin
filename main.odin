@@ -292,7 +292,13 @@ main :: proc() {
 					locked_pixels[u32(2*grid_width)*y + x] = velocity_to_u32(velocity_pong[y][x])
 				}
 				for x in 0..<u32(grid_width) {
-					locked_pixels[u32(2*grid_width)*y + x + u32(grid_width)] = scalar_to_u32_logarithmic(divergence[y][x])
+					d := divergence[y][x]
+					switch pressure_mode {
+					case .MAC:    d /= 1.0
+					case .Vertex: d /= 2.0
+					case .Wide:   d /= 3.0
+					}
+					locked_pixels[u32(2*grid_width)*y + x + u32(grid_width)] = scalar_to_u32_logarithmic(d)
 				}
 			}
 
