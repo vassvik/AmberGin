@@ -7,6 +7,7 @@ import "core:mem"
 import "core:math"
 import "core:math/linalg"
 import "core:strings"
+import "core:os"
 
 // Defining these will try to prefer discrete graphics over integrated graphics
 @(export, link_name="NvOptimusEnablement")
@@ -82,6 +83,30 @@ main :: proc() {
 		*/
 	}
 
+	if false {
+		x_velocity_data, x_ok := os.read_entire_file("C:/Users/mv/Downloads/velx_dump")
+		y_velocity_data, y_ok := os.read_entire_file("C:/Users/mv/Downloads/vely_dump")
+		x_velocity := mem.slice_data_cast([]f32, x_velocity_data)
+		y_velocity := mem.slice_data_cast([]f32, y_velocity_data)
+		fmt.println(x_ok, len(x_velocity_data))
+		fmt.println(y_ok, len(y_velocity_data))
+
+		min_x, max_x, min_y, max_y := max(f32), min(f32), max(f32), min(f32)
+		for j in 0..<grid_height {
+			for i in 0..<grid_width {
+				velocity_ping[j][i] = {
+					x_velocity[j*grid_width+i] / 256.0,
+					y_velocity[j*grid_width+i] / 256.0,
+				}
+				min_x = min(min_x, x_velocity[j*grid_width+i])
+				max_x = max(max_x, x_velocity[j*grid_width+i])
+				min_y = min(min_y, y_velocity[j*grid_width+i])
+				max_y = max(max_y, y_velocity[j*grid_width+i])
+			}
+		}
+		fmt.println(min_x, max_x, "\n", min_y, max_y)
+	}
+
 	pressure_ping := make_2D(f32, grid_width, grid_height)
 	pressure_pong := make_2D(f32, grid_width, grid_height)
 	divergence := make_2D(f32, grid_width, grid_height)
@@ -122,6 +147,14 @@ main :: proc() {
 	key_states: map[sdl.Scancode]bool
 	key_pressed: map[sdl.Scancode]bool
 
+	Multigrid_Level :: struct {
+		level: int,
+		iterations: int,
+		omega: f64,
+	}
+
+	iteration_index: int
+	iterations: [dynamic]int
 
 	should_quit := false
 	for frame := u32(0); !should_quit; frame += 1 {
@@ -234,10 +267,11 @@ main :: proc() {
 
 				// Post-smooth Full
 				calc_iterate(&pressure_ping, &pressure_pong, divergence, 6, 0, 0.8, 0.0, pressure_mode)
+
+				// Corrections
+				calc_iterate(&pressure_ping, &pressure_pong, divergence, 0, pressure_corrections, 0.0, omega_corrections, pressure_mode)
 			}
 
-			// Corrections
-			calc_iterate(&pressure_ping, &pressure_pong, divergence, 0, pressure_corrections, 0.0, omega_corrections, pressure_mode)
 
 		} else {
 			clear_pressure(pressure_ping)
@@ -297,8 +331,8 @@ main :: proc() {
 			locked_pixels := mem.slice_ptr(cast(^u32)locked_pixels_raw, int(2*grid_width) * int(2*grid_height))
 
 			velocity_to_u32 :: proc(v: [2]f32) -> u32 {
-				r := u32(255 * (0.5 + 0.5*v.x))
-				g := u32(255 * (0.5 + 0.5*v.y))
+				r := u32(255 * clamp((0.5 + 0.5*v.x), 0.0, 1.0))
+				g := u32(255 * clamp((0.5 + 0.5*v.y), 0.0, 1.0))
 				b := u32(0)
 				a := u32(255)
 				return (r << 0) | (g << 8) | (b << 16) | (a << 24) 
@@ -381,7 +415,7 @@ main :: proc() {
 			render_string(font, renderer, fmt.tprintf("Multigrid          % 7f +/- %f (%f)\x00", multigrid_timer.average, multigrid_timer.std, multigrid_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Gradient           % 7f +/- %f (%f)\x00", gradient_timer.average, gradient_timer.std, gradient_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Final Divergence   % 7f +/- %f (%f)\x00", final_divergence_timer.average, final_divergence_timer.std, final_divergence_timer.ste), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Max Divergence: %e, Avg Divergence: %e\x00", max_divergence, avg_divergence), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Divergence, Max: %.6e, Avg: %.6e\x00", max_divergence, avg_divergence), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Debug Text         % 7f +/- %f (%f)\x00", debug_text_timer.average, debug_text_timer.std, debug_text_timer.ste), 0, cursor, text_color); cursor += 16
 			sdl.RenderPresent(renderer);
 		}
