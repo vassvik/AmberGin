@@ -8,6 +8,11 @@ Pressure_Mode :: enum {
 	Wide,
 }
 
+Restriction_Mode :: enum {
+	Nearest,
+	Interpolate,
+}
+
 calc_divergence :: proc(velocity_ping: [][][2]f32, divergence: [][]f32, timer: ^Timer($N), pressure_mode: Pressure_Mode) {
 	grid_width := len(velocity_ping[0])
 	grid_height := len(velocity_ping)
@@ -235,7 +240,7 @@ calc_gradient :: proc(pressure_ping: [][]f32, velocity_ping, velocity_pong: [][]
 	|      \|/     \|/     \|/      | 
 	0       1       2       3       *
 */
-calc_restriction :: proc(fine_grid: [][]f32, coarse_grid: [][]f32) {
+calc_restriction :: proc(fine_grid: [][]f32, coarse_grid: [][]f32, restriction_mode: Restriction_Mode) {
 	fine_grid_width := len(fine_grid[0])
 	fine_grid_height := len(fine_grid)
 
@@ -247,18 +252,25 @@ calc_restriction :: proc(fine_grid: [][]f32, coarse_grid: [][]f32) {
 
 	for j in 1..<coarse_grid_height {
 		for i in 1..<coarse_grid_width {
-			rSW := fine_grid[2*j-1][2*i-1]
-			rS  := fine_grid[2*j-1][2*i+0]
-			rSE := fine_grid[2*j-1][2*i+1]
-			rW  := fine_grid[2*j+0][2*i-1]
-			rC  := fine_grid[2*j+0][2*i+0]
-			rE  := fine_grid[2*j+0][2*i+1]
-			rNW := fine_grid[2*j+1][2*i-1]
-			rN  := fine_grid[2*j+1][2*i+0]
-			rNE := fine_grid[2*j+1][2*i+1]
+			switch restriction_mode {
+			case .Interpolate:
+				rSW := fine_grid[2*j-1][2*i-1]
+				rS  := fine_grid[2*j-1][2*i+0]
+				rSE := fine_grid[2*j-1][2*i+1]
+				rW  := fine_grid[2*j+0][2*i-1]
+				rC  := fine_grid[2*j+0][2*i+0]
+				rE  := fine_grid[2*j+0][2*i+1]
+				rNW := fine_grid[2*j+1][2*i-1]
+				rN  := fine_grid[2*j+1][2*i+0]
+				rNE := fine_grid[2*j+1][2*i+1]
 
-			r := (1.0 * (rSW + rSE + rNW + rNE) + 2.0 * (rS + rW + rE + rN) + 4.0 * rC) / 16.0
-			coarse_grid[j][i] = 4.0 * r
+				r := (1.0 * (rSW + rSE + rNW + rNE) + 2.0 * (rS + rW + rE + rN) + 4.0 * rC) / 16.0
+				coarse_grid[j][i] = 4.0 * r
+			case .Nearest:
+				rC  := fine_grid[2*j+0][2*i+0]
+				r := 1.0 * rC
+				coarse_grid[j][i] = 4.0 * r
+			}
 		}
 	}
 }

@@ -140,6 +140,7 @@ main :: proc() {
 	pressure_corrections := 0
 
 	pressure_mode := Pressure_Mode.MAC
+	restriction_mode := Restriction_Mode.Interpolate
 
 	omega := 1.8
 	omega_corrections := 0.8
@@ -215,6 +216,10 @@ main :: proc() {
 				pressure_mode = Pressure_Mode((int(pressure_mode) + 1) % len(Pressure_Mode))
 			}
 
+			if key_pressed[.R] {
+				restriction_mode = Restriction_Mode((int(restriction_mode) + 1) % len(Restriction_Mode))
+			}
+
 			pressure_iterations = max(0, pressure_iterations)
 			pressure_corrections = max(0, pressure_corrections)
 
@@ -236,7 +241,7 @@ main :: proc() {
 			for iter in 0..<pressure_iterations {
 				// Descend Full -> Quarter
 				calc_residual(pressure_ping, pressure_pong, divergence, pressure_mode)
-				calc_restriction(pressure_pong, divergence_half)
+				calc_restriction(pressure_pong, divergence_half, restriction_mode)
 				
 				// Init Half
 				clear_pressure(pressure_ping_half)
@@ -246,7 +251,7 @@ main :: proc() {
 
 				// Descend Half -> Quarter
 				calc_residual(pressure_ping_half, pressure_pong_half, divergence_half, pressure_mode)
-				calc_restriction(pressure_pong_half, divergence_quarter)
+				calc_restriction(pressure_pong_half, divergence_quarter, restriction_mode)
 
 				// Init Quarter
 				clear_pressure(pressure_ping_quarter)
@@ -407,7 +412,7 @@ main :: proc() {
 			cursor := i32(0)
 			text_color := sdl.Color{255, 255, 255, 255};
 			render_string(font, renderer, fmt.tprintf("Frame: %d\x00", frame), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Iterations: %d (%d), mode: %v, omega: %f (%f)\x00", pressure_iterations, pressure_corrections, pressure_mode, omega, omega_corrections), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Iterations: %d (%d), pmode: %v, rmode: %v, omega: %f (%f)\x00", pressure_iterations, pressure_corrections, pressure_mode, restriction_mode, omega, omega_corrections), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Frame              % 7f +/- %f (%f)\x00", frame_timer.average, frame_timer.std, frame_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Display Write      % 7f +/- %f (%f)\x00", display_write_timer.average, display_write_timer.std, display_write_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Initial Divergence % 7f +/- %f (%f)\x00", initial_divergence_timer.average, initial_divergence_timer.std, initial_divergence_timer.ste), 0, cursor, text_color); cursor += 16
