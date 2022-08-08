@@ -137,16 +137,31 @@ calc_iterate :: proc(pressure_ping, pressure_pong: ^[][]f32, divergence: [][]f32
 			}
 		}
 
-		for j in 1..<grid_height {
-			for i in 1..<grid_width {
-				if omega_solve > 1.0 && ((i ~ j) & 1) == 0 do continue
-				calc_stencil_pressure(pressure_ping^, output^, divergence, omega_solve, pressure_mode, i, j, false)
+		if pressure_mode == .Vertex {
+			for j in 1..<grid_height {
+				for i in 1..<grid_width {
+					if omega_solve > 1.0 && (i & 1) == 0 do continue
+					calc_stencil_pressure(pressure_ping^, output^, divergence, omega_solve, pressure_mode, i, j, false)
+				}
 			}
-		}
-		for j in 1..<grid_height {
-			for i in 1..<grid_width {
-				if omega_solve > 1.0 && ((i ~ j) & 1) == 1 do continue
-				calc_stencil_pressure(pressure_ping^, output^, divergence, omega_solve, pressure_mode, i, j, false)
+			for j in 1..<grid_height {
+				for i in 1..<grid_width {
+					if omega_solve > 1.0 && (i & 1) == 1 do continue
+					calc_stencil_pressure(pressure_ping^, output^, divergence, omega_solve, pressure_mode, i, j, false)
+				}
+			}
+		} else {
+			for j in 1..<grid_height {
+				for i in 1..<grid_width {
+					if omega_solve > 1.0 && ((i ~ j) & 1) == 0 do continue
+					calc_stencil_pressure(pressure_ping^, output^, divergence, omega_solve, pressure_mode, i, j, false)
+				}
+			}
+			for j in 1..<grid_height {
+				for i in 1..<grid_width {
+					if omega_solve > 1.0 && ((i ~ j) & 1) == 1 do continue
+					calc_stencil_pressure(pressure_ping^, output^, divergence, omega_solve, pressure_mode, i, j, false)
+				}
 			}
 		}
 	}

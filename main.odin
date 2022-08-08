@@ -143,7 +143,8 @@ main :: proc() {
 	restriction_mode := Restriction_Mode.Interpolate
 
 	omega := 1.8
-	omega_corrections := 0.8
+	omega_corrections := 1.4
+	omega_smooth := 1.001
 
 	key_states: map[sdl.Scancode]bool
 	key_pressed: map[sdl.Scancode]bool
@@ -156,6 +157,12 @@ main :: proc() {
 
 	iteration_index: int
 	iterations: [dynamic]int
+
+	pre_smooth_level0: int = 1
+	pre_smooth_level1: int = 1
+	solve_iter_level2: int = 2 * int(max(grid_width, grid_height)) / 4
+	post_smooth_level1: int = 4
+	post_smooth_level0: int = 2
 
 	should_quit := false
 	for frame := u32(0); !should_quit; frame += 1 {
@@ -184,6 +191,16 @@ main :: proc() {
 
 			muls: [3]int = {10 if key_states[.LCTRL] else 1, 10 if key_states[.LSHIFT] else 1, 10 if key_states[.LALT] else 1}
 			muls2: [3]int = {10 if !key_states[.LCTRL] else 1, 10 if !key_states[.LSHIFT] else 1, 10 if !key_states[.LALT] else 1}
+			mul_iter: int = 1
+			if key_states[.LCTRL] do mul_iter *= 2
+			if key_states[.LSHIFT] do mul_iter *= 2
+			if key_states[.LALT] do mul_iter *= -1
+
+			if key_pressed[.NUM1] do pre_smooth_level0  = max(pre_smooth_level0 + mul_iter, 0)
+			if key_pressed[.NUM2] do pre_smooth_level1  = max(pre_smooth_level1 + mul_iter, 0)
+			if key_pressed[.NUM3] do solve_iter_level2  = max(solve_iter_level2 + mul_iter, 0)
+			if key_pressed[.NUM4] do post_smooth_level1 = max(post_smooth_level1 + mul_iter, 0)
+			if key_pressed[.NUM5] do post_smooth_level0 = max(post_smooth_level0 + mul_iter, 0)
 
 			if key_pressed[.RIGHT] {
 				pressure_iterations += 1*(muls[0])*(muls[1])*(muls[2])
@@ -212,6 +229,13 @@ main :: proc() {
 				omega_corrections -= 1/f64((muls2[0])*(muls2[1])*(muls2[2]))
 			}
 
+			if key_pressed[.NUM8] {
+				omega_smooth += 1/f64((muls2[0])*(muls2[1])*(muls2[2]))
+			}
+			if key_pressed[.NUM7] {
+				omega_smooth -= 1/f64((muls2[0])*(muls2[1])*(muls2[2]))
+			}
+
 			if key_pressed[.M] {
 				pressure_mode = Pressure_Mode((int(pressure_mode) + 1) % len(Pressure_Mode))
 			}
@@ -236,7 +260,7 @@ main :: proc() {
 			clear_pressure(pressure_ping)
 
 			// Pre-smooth Full
-			calc_iterate(&pressure_ping, &pressure_pong, divergence, 1, 0, 0.8, 0.0, pressure_mode)
+			calc_iterate(&pressure_ping, &pressure_pong, divergence, pre_smooth_level0, 0, omega_smooth, 0.0, pressure_mode)
 
 			for iter in 0..<pressure_iterations {
 				// Descend Full -> Quarter
@@ -247,7 +271,7 @@ main :: proc() {
 				clear_pressure(pressure_ping_half)
 
 				// Pre-smooth Half
-				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, 1, 0, 0.8, 0.0, pressure_mode)
+				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, pre_smooth_level1, 0, omega_smooth, 0.0, pressure_mode)
 
 				// Descend Half -> Quarter
 				calc_residual(pressure_ping_half, pressure_pong_half, divergence_half, pressure_mode)
@@ -257,21 +281,21 @@ main :: proc() {
 				clear_pressure(pressure_ping_quarter)
 
 				// Solve Quarter
-				calc_iterate(&pressure_ping_quarter, &pressure_pong_quarter, divergence_quarter, int(max(grid_width, grid_height)) / 4, 0, omega, 0.0, pressure_mode)
+				calc_iterate(&pressure_ping_quarter, &pressure_pong_quarter, divergence_quarter, solve_iter_level2, 0, omega, 0.0, pressure_mode)
 
 				// Ascend Quarter -> Half
 				calc_prolongation(pressure_ping_quarter, pressure_pong_half)
 				for j in 1..<grid_height/2 do for i in 1..<grid_width/2 do pressure_ping_half[j][i] += pressure_pong_half[j][i]
 
 				// Post-smooth Half
-				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, 12, 0, 0.8, 0.0, pressure_mode)
+				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, post_smooth_level1, 0, omega_smooth, 0.0, pressure_mode)
 
 				// Ascend Half -> Full
 				calc_prolongation(pressure_ping_half, pressure_pong)
 				for j in 1..<grid_height do for i in 1..<grid_width do pressure_ping[j][i] += pressure_pong[j][i]
 
 				// Post-smooth Full
-				calc_iterate(&pressure_ping, &pressure_pong, divergence, 6, 0, 0.8, 0.0, pressure_mode)
+				calc_iterate(&pressure_ping, &pressure_pong, divergence, post_smooth_level0, 0, omega_smooth, 0.0, pressure_mode)
 
 				// Corrections
 				calc_iterate(&pressure_ping, &pressure_pong, divergence, 0, pressure_corrections, 0.0, omega_corrections, pressure_mode)
@@ -412,7 +436,9 @@ main :: proc() {
 			cursor := i32(0)
 			text_color := sdl.Color{255, 255, 255, 255};
 			render_string(font, renderer, fmt.tprintf("Frame: %d\x00", frame), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Iterations: %d (%d), pmode: %v, rmode: %v, omega: %f (%f)\x00", pressure_iterations, pressure_corrections, pressure_mode, restriction_mode, omega, omega_corrections), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Iterations: %d (%d), pmode: %v, rmode: %v\x00", pressure_iterations, pressure_corrections, pressure_mode, restriction_mode), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Omega: Smooth: %f, Solve: %f, Correct: %f\x00", omega_smooth, omega, omega_corrections), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Iterations: Pre: %d %d, Solve: %d, Post: %d %d\x00", pre_smooth_level0, pre_smooth_level1, solve_iter_level2, post_smooth_level1, post_smooth_level0), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Frame              % 7f +/- %f (%f)\x00", frame_timer.average, frame_timer.std, frame_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Display Write      % 7f +/- %f (%f)\x00", display_write_timer.average, display_write_timer.std, display_write_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Initial Divergence % 7f +/- %f (%f)\x00", initial_divergence_timer.average, initial_divergence_timer.std, initial_divergence_timer.ste), 0, cursor, text_color); cursor += 16
