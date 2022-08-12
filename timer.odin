@@ -27,10 +27,12 @@ create_timer :: proc($N: int) -> Timer(N) where N & (N-1) == 0 {
 }
 
 start_timer :: proc(using timer: ^Timer($N)) {
+	if timer == nil do return
 	previous_counter = sdl.GetPerformanceCounter()
 }
 
 stop_timer :: proc(using timer: ^Timer($N)) {
+	if timer == nil do return
 	current_counter := sdl.GetPerformanceCounter()
 	delta_counter := current_counter - previous_counter
 	previous_counter = current_counter

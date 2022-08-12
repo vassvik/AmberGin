@@ -16,39 +16,22 @@ NvOptimusEnablement: u32 = 0x00000001;
 @(export, link_name="AmdPowerXpressRequestHighPerformance")
 AmdPowerXpressRequestHighPerformance: i32 = 1;
 
+
+
+make_2D :: proc($T: typeid, M, N: i32, allocator := context.allocator) -> [][]T {
+	backing := make([]T, int(M)*int(N))
+	grid := make([][]T, int(N))
+	for row, j in &grid do row = backing[j*int(M):(j+1)*int(M)]
+	return grid
+}
+
+free_2D :: proc(grid: [][]$T) {
+	delete(grid[0])
+	delete(grid)
+}
+
+
 main :: proc() {
-	sdl.Init({.VIDEO, .TIMER})
-	defer sdl.Quit()
-
-	sdl_ttf.Init()
-	defer sdl_ttf.Quit()
-
-	font := sdl_ttf.OpenFont("C:/Windows/Fonts/Consola.ttf", 16)
-	defer sdl_ttf.CloseFont(font)
-	assert(font != nil)
-
-	window_width, window_height: i32 = 2*512, 2*512
-	window := sdl.CreateWindow("Test SDL", 50, 50, window_width, window_height, {.SHOWN})
-	defer sdl.DestroyWindow(window)
-	assert(window != nil)
-
-	//renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED})
-	renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
-	defer sdl.DestroyRenderer(renderer)
-	assert(renderer != nil)
-
-
-	make_2D :: proc($T: typeid, M, N: i32, allocator := context.allocator) -> [][]T {
-		backing := make([]T, int(M)*int(N))
-		grid := make([][]T, int(N))
-		for row, j in &grid do row = backing[j*int(M):(j+1)*int(M)]
-		return grid
-	}
-
-	free_2D :: proc(grid: [][]$T) {
-		delete(grid[0])
-		delete(grid)
-	}
 
 	grid_width, grid_height: i32 = 256, 256
 	velocity_ping := make_2D([2]f32, grid_width, grid_height)
@@ -83,13 +66,11 @@ main :: proc() {
 		*/
 	}
 
-	if false {
+	if true {
 		x_velocity_data, x_ok := os.read_entire_file("C:/Users/mv/Downloads/velx_dump")
 		y_velocity_data, y_ok := os.read_entire_file("C:/Users/mv/Downloads/vely_dump")
 		x_velocity := mem.slice_data_cast([]f32, x_velocity_data)
 		y_velocity := mem.slice_data_cast([]f32, y_velocity_data)
-		fmt.println(x_ok, len(x_velocity_data))
-		fmt.println(y_ok, len(y_velocity_data))
 
 		min_x, max_x, min_y, max_y := max(f32), min(f32), max(f32), min(f32)
 		for j in 0..<grid_height {
@@ -104,8 +85,30 @@ main :: proc() {
 				max_y = max(max_y, y_velocity[j*grid_width+i])
 			}
 		}
-		fmt.println(min_x, max_x, "\n", min_y, max_y)
 	}
+
+	//test(grid_width, grid_height, velocity_ping)
+when true {
+	sdl.Init({.VIDEO, .TIMER})
+	defer sdl.Quit()
+
+	sdl_ttf.Init()
+	defer sdl_ttf.Quit()
+
+	font := sdl_ttf.OpenFont("C:/Windows/Fonts/Consola.ttf", 16)
+	defer sdl_ttf.CloseFont(font)
+	assert(font != nil)
+
+	window_width, window_height: i32 = 2*512, 2*512
+	window := sdl.CreateWindow("Test SDL", 50, 50, window_width, window_height, {.SHOWN})
+	defer sdl.DestroyWindow(window)
+	assert(window != nil)
+
+	//renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED})
+	renderer := sdl.CreateRenderer(window, -1, {.ACCELERATED, .PRESENTVSYNC})
+	defer sdl.DestroyRenderer(renderer)
+	assert(renderer != nil)
+
 
 	pressure_ping := make_2D(f32, grid_width, grid_height)
 	pressure_pong := make_2D(f32, grid_width, grid_height)
@@ -136,10 +139,10 @@ main :: proc() {
 	gradient_timer := create_timer(128)
 	final_divergence_timer := create_timer(128)
 
-	pressure_iterations := 1
-	pressure_corrections := 0
+	pressure_iterations := 2
+	pressure_corrections := 4
 
-	pressure_mode := Pressure_Mode.MAC
+	pressure_mode := Pressure_Mode.Vertex
 	restriction_mode := Restriction_Mode.Interpolate
 
 	omega := 1.8
@@ -165,7 +168,8 @@ main :: proc() {
 	post_smooth_level0: int = 2
 
 	should_quit := false
-	for frame := u32(0); !should_quit; frame += 1 {
+	
+	for pressure_iterations := 0; pressure_iterations <= 10; pressure_iterations += 1 do for frame := u32(0); !should_quit; frame += 1 {
 		stop_timer(&frame_timer)
 		start_timer(&frame_timer)
 
@@ -336,10 +340,27 @@ main :: proc() {
 		 	max_bin = max(max_bin, divergence_bins[i])
 		 	sum_bins += divergence_bins[i]
 		}
+
 		if key_pressed[.TAB] {
 			//fmt.println(divergence_bins)
 			//fmt.println(divergence_bins / max_bin)
 			fmt.printf("%+ 7f\n", 100*divergence_bins / sum_bins)
+		}
+
+
+		precision_bins: [32]f64
+		for j in 1..<grid_height {
+			for i in 1..<grid_width {
+				d := abs(divergence[j][i])
+				switch pressure_mode {
+				case .MAC:    d /= 1.0
+				case .Vertex: d /= 2.0
+				case .Wide:   d /= 3.0
+				}
+
+				logd := math.log(d, 2.0)
+				precision_bins[clamp(int(logd + 25), 0, 31)] += 1.0
+			}
 		}
 
 		avg_divergence /= f32(grid_width-1)*f32(grid_height-1)
@@ -450,7 +471,10 @@ main :: proc() {
 			render_string(font, renderer, fmt.tprintf("Debug Text         % 7f +/- %f (%f)\x00", debug_text_timer.average, debug_text_timer.std, debug_text_timer.ste), 0, cursor, text_color); cursor += 16
 			sdl.RenderPresent(renderer);
 		}
+
 	}
+}
+
 }
 
 
