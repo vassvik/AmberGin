@@ -96,27 +96,20 @@ main :: proc() {
 	init_sim :: proc(density: [][]f32, velocity_x, velocity_y: [][]f32) {
 		grid_height := len(density)
 		grid_width := len(density[0])
-
+		
 		t := int(10)
-		if true {
-			// Horizontal velocity
-			for j in grid_height/2-t..=grid_height/2+t {
-				for i in grid_width/2-t..=grid_height/2+t+1 {
-					velocity_x[j][i] = 1.0
-				}
-			}
-		} 
-		if false {
-			// Vertical velocity
-			for j in grid_height/2-t..=grid_height/2+t+1 {
-				for i in grid_width/2-t..=grid_height/2+t {
-					velocity_y[j][i] = 1.0
-				}
-			}
-		}
 
 		for j in 0..<grid_height {
 			for i in 0..<grid_width {
+				// Horizontal velocity
+				velocity_x[j][i] = 0.0
+				velocity_y[j][i] = 0.0
+				if j >= grid_height/2-t && j <= grid_height/2+t {
+					if i >= grid_width/2-t && i <= grid_height/2+t+1 {
+						velocity_x[j][i] = 1.0
+					}
+				}
+
 				density[j][i] = 0.0
 				if j >= grid_height/2-t && j <= grid_height/2+t {
 					if i >= grid_width/2-t && i <= grid_width/2+t {
@@ -191,6 +184,85 @@ main :: proc() {
 		}
 
 		density_ping^, density_pong^ = density_pong^, density_ping^
+	}
+
+	advect_velocity :: proc(velocity_x_ping, velocity_x_pong, velocity_y_ping, velocity_y_pong: ^[][]f32, dt: f32) {
+		grid_width := len(velocity_x_ping[0])-1
+		grid_height := len(velocity_x_ping^)
+
+		for j in 0..<grid_height {
+			for i in 0..<grid_width+1 {
+
+				vx := velocity_x_ping[j][i]
+				vy_00 := velocity_y_ping[j  ][i-1] if i > 0 else 0.0
+				vy_10 := velocity_y_ping[j  ][i  ] if i < grid_width else 0.0
+				vy_01 := velocity_y_ping[j+1][i-1] if i > 0 else 0.0
+				vy_11 := velocity_y_ping[j+1][i  ] if i < grid_width else 0.0
+				vy := 0.25 * (vy_00 + vy_10 + vy_01 + vy_11)
+
+				p := [2]f32{f32(i), f32(j)} + 0.5
+				q := p - [2]f32{vx, vy} * dt
+
+				x := math.floor(q.x - 0.5)
+				y := math.floor(q.y - 0.5)
+
+				tx := (q.x - 0.5) - x
+				ty := (q.y - 0.5) - y
+
+				xi := int(x)
+				yi := int(y)
+
+				V00 := 0.0 if xi   < 0 || yi   < 0 || xi   >= grid_width+1 || yi   >= grid_height else velocity_x_ping[yi  ][xi  ]
+				V10 := 0.0 if xi+1 < 0 || yi   < 0 || xi+1 >= grid_width+1 || yi   >= grid_height else velocity_x_ping[yi  ][xi+1]
+				V01 := 0.0 if xi   < 0 || yi+1 < 0 || xi   >= grid_width+1 || yi+1 >= grid_height else velocity_x_ping[yi+1][xi  ]
+				V11 := 0.0 if xi+1 < 0 || yi+1 < 0 || xi+1 >= grid_width+1 || yi+1 >= grid_height else velocity_x_ping[yi+1][xi+1]
+
+				V0 := V00 * (1.0 - ty) + V01 * ty
+				V1 := V10 * (1.0 - ty) + V11 * ty
+
+				V := V0 * (1.0 - tx) + V1 * tx
+				velocity_x_pong[j][i] = V
+			}
+		}
+
+		for j in 0..<grid_height+1 {
+			for i in 0..<grid_width {
+
+				vx_00 := velocity_x_ping[j-1][i  ] if j > 0 else 0.0
+				vx_10 := velocity_x_ping[j  ][i  ] if j < grid_height else 0.0
+				vx_01 := velocity_x_ping[j-1][i+1] if j > 0 else 0.0
+				vx_11 := velocity_x_ping[j  ][i+1] if j < grid_height else 0.0
+				vx := 0.25 * (vx_00 + vx_10 + vx_01 + vx_11)
+				vy := velocity_y_ping[j][i]
+
+				p := [2]f32{f32(i), f32(j)} + 0.5
+				q := p - [2]f32{vx, vy} * dt
+
+				x := math.floor(q.x - 0.5)
+				y := math.floor(q.y - 0.5)
+
+				tx := (q.x - 0.5) - x
+				ty := (q.y - 0.5) - y
+
+				xi := int(x)
+				yi := int(y)
+
+				V00 := 0.0 if xi   < 0 || yi   < 0 || xi   >= grid_width || yi   >= grid_height+1 else velocity_y_ping[yi  ][xi  ]
+				V10 := 0.0 if xi+1 < 0 || yi   < 0 || xi+1 >= grid_width || yi   >= grid_height+1 else velocity_y_ping[yi  ][xi+1]
+				V01 := 0.0 if xi   < 0 || yi+1 < 0 || xi   >= grid_width || yi+1 >= grid_height+1 else velocity_y_ping[yi+1][xi  ]
+				V11 := 0.0 if xi+1 < 0 || yi+1 < 0 || xi+1 >= grid_width || yi+1 >= grid_height+1 else velocity_y_ping[yi+1][xi+1]
+
+				V0 := V00 * (1.0 - ty) + V01 * ty
+				V1 := V10 * (1.0 - ty) + V11 * ty
+
+				V := V0 * (1.0 - tx) + V1 * tx
+				velocity_y_pong[j][i] = V
+			}
+		}
+
+		velocity_x_ping^, velocity_x_pong^ = velocity_x_pong^, velocity_x_ping^
+		velocity_y_ping^, velocity_y_pong^ = velocity_y_pong^, velocity_y_ping^
+
 	}
 
 	for frame := u32(0); !should_quit; frame += 1 {
@@ -316,10 +388,11 @@ main :: proc() {
 			}
 		}
 		calc_residual(pressure_ping, residual, divergence)
-		calc_gradient(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_x_pong, velocity_y_pong, &gradient_timer)
-		calc_divergence(velocity_x_pong, velocity_y_pong, divergence, &final_divergence_timer)
+		calc_gradient(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_x_ping, velocity_y_ping, &gradient_timer)
+		//calc_divergence(velocity_x_pong, velocity_y_pong, divergence, &final_divergence_timer)
 
 		advect_density(&density_ping, &density_pong, velocity_x_pong, velocity_y_pong, 1.0)
+		advect_velocity(&velocity_x_ping, &velocity_x_pong, &velocity_y_ping, &velocity_y_pong, 1.0)
 		// Stats
 		max_divergence, avg_divergence: f32
 		divergence_bins: [9]f64
@@ -407,7 +480,7 @@ main :: proc() {
 
 			for y in 0..<u32(grid_height) {
 				for x in 0..<u32(grid_width) {
-					v := 0.5 * [2]f32{velocity_x_pong[y][x] + velocity_x_pong[y][x+1], velocity_y_pong[y][x] + velocity_y_pong[y+1][x]}
+					v := 0.5 * [2]f32{velocity_x_ping[y][x] + velocity_x_ping[y][x+1], velocity_y_ping[y][x] + velocity_y_ping[y+1][x]}
 					locked_pixels[u32(2*grid_width)*y + x] = velocity_to_u32(v)
 				}
 				for x in 0..<u32(grid_width) {
