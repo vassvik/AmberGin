@@ -4,7 +4,7 @@ import sdl "vendor:sdl2"
 
 import "core:math"
 import "core:fmt"
-
+when false {
 test :: proc(grid_width, grid_height: i32, velocity_in: [][][2]f32) {
 	pressure_ping := make_2D(f32, grid_width, grid_height)
 	pressure_pong := make_2D(f32, grid_width, grid_height)
@@ -288,4 +288,5 @@ test :: proc(grid_width, grid_height: i32, velocity_in: [][][2]f32) {
 			       100 * bins_corr_y_rel[j] / f64(grid_width * grid_height),
 			       100 * bins_encoded_y_rel[j] / f64(grid_width * grid_height))
 	}
+}
 }
