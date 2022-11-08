@@ -38,9 +38,11 @@ main :: proc() {
 	velocity_x_pong := make_2D(f32, grid_width+1, grid_height+0)
 	velocity_y_ping := make_2D(f32, grid_width+0, grid_height+1)
 	velocity_y_pong := make_2D(f32, grid_width+0, grid_height+1)
-	{
-		velocity_x_ping[grid_height/2  ][grid_width/2] = 1.0
-		velocity_x_ping[grid_height/2-1][grid_width/2] = 1.0
+	t := i32(0)
+	for j in grid_height/2-t..=grid_height/2+t {
+		for i in grid_width/2-t..=grid_height/2+t+1 {
+			velocity_x_ping[j][i] = 1.0
+		}
 	}
 
 when true {
@@ -326,21 +328,21 @@ when true {
 
 			for y in 0..<u32(grid_height) {
 				for x in 0..<u32(grid_width) {
-					v := [2]f32{velocity_x_pong[y][x], velocity_y_pong[y][x]}
+					v := 0.5 * [2]f32{velocity_x_pong[y][x] + velocity_x_pong[y][x+1], velocity_y_pong[y][x] + velocity_y_pong[y+1][x]}
 					locked_pixels[u32(2*grid_width)*y + x] = velocity_to_u32(v)
 				}
 				for x in 0..<u32(grid_width) {
-					d := divergence[y][x]
+					d := divergence[1+y][1+x]
 					locked_pixels[u32(2*grid_width)*y + x + u32(grid_width)] = scalar_to_u32_logarithmic(d)
 				}
 			}
 
 			for y in 0..<u32(grid_height) {
 				for x in 0..<u32(grid_width) {
-					locked_pixels[u32(2*grid_width)*(y + u32(grid_height)) + x] = scalar_to_u32_logarithmic(pressure_ping[y][x])
+					locked_pixels[u32(2*grid_width)*(y + u32(grid_height)) + x] = scalar_to_u32_logarithmic(pressure_ping[1+y][1+x])
 				}
 				for x in 0..<u32(grid_width) {
-					locked_pixels[u32(2*grid_width)*(y + u32(grid_height)) + x + u32(grid_width)] = scalar_to_u32_logarithmic(residual[y][x])
+					locked_pixels[u32(2*grid_width)*(y + u32(grid_height)) + x + u32(grid_width)] = scalar_to_u32_logarithmic(residual[1+y][1+x])
 				}
 			}
 		}
