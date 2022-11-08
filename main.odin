@@ -39,10 +39,19 @@ main :: proc() {
 	velocity_y_ping := make_2D(f32, grid_width+0, grid_height+1)
 	velocity_y_pong := make_2D(f32, grid_width+0, grid_height+1)
 	t := i32(5)
-	for j in grid_height/2-t..=grid_height/2+t {
-		for i in grid_width/2-t..=grid_height/2+t+1 {
-			velocity_x_ping[j][i] = 1.0
-			fmt.println(i, j)
+	if true {
+		for j in grid_height/2-t..=grid_height/2+t {
+			for i in grid_width/2-t..=grid_height/2+t+1 {
+				velocity_x_ping[j][i] = -1.0
+				fmt.println(i, j)
+			}
+		}
+	} else {
+		for j in grid_height/2-t..=grid_height/2+t+1 {
+			for i in grid_width/2-t..=grid_height/2+t {
+				velocity_y_ping[j-100][i] = -1.0
+				fmt.println(i, j)
+			}
 		}
 	}
 
@@ -96,8 +105,8 @@ main :: proc() {
 	gradient_timer           := create_timer(64)
 	final_divergence_timer   := create_timer(64)
 
-	omega := 1.8
-	omega_smooth := 0.8
+	omega := 1.86
+	omega_smooth := 1.2
 
 	key_states: map[sdl.Scancode]bool
 	key_pressed: map[sdl.Scancode]bool
@@ -113,9 +122,9 @@ main :: proc() {
 
 	pre_smooth_level0: int = 1
 	pre_smooth_level1: int = 1
-	solve_iter_level2: int = 2 * int(max(grid_width, grid_height)+1) / 4
+	solve_iter_level2: int = 1 * int(max(grid_width, grid_height)+1) / 4
 	post_smooth_level1: int = 4
-	post_smooth_level0: int = 2
+	post_smooth_level0: int = 4
 
 	should_quit := false
 	pressure_iterations := 0
