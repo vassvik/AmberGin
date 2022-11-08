@@ -33,58 +33,16 @@ free_2D :: proc(grid: [][]$T) {
 
 
 main :: proc() {
-
-	grid_width, grid_height: i32 = 256, 256
-	velocity_ping := make_2D([2]f32, grid_width, grid_height)
-	velocity_pong := make_2D([2]f32, grid_width, grid_height)
+	grid_width, grid_height: i32 = 31, 31
+	velocity_x_ping := make_2D(f32, grid_width+1, grid_height+0)
+	velocity_x_pong := make_2D(f32, grid_width+1, grid_height+0)
+	velocity_y_ping := make_2D(f32, grid_width+0, grid_height+1)
+	velocity_y_pong := make_2D(f32, grid_width+0, grid_height+1)
 	{
-		source_size := min(grid_width, grid_height) / 4
-		for j in (grid_height - source_size)/2..<(grid_height + source_size)/2 {
-			for i in (grid_width - source_size)/2..<(grid_width + source_size)/2 {
-				velocity_ping[j][i].y = 1.0
-			}
-		}
-		/*
-		*/
-		/*
-		for j in 0..<grid_height  {
-			for i in 0..<grid_width  {
-				x := (f32(i) + 0.5) / f32(grid_width)
-				y := (f32(j) + 0.5) / f32(grid_height)
-				x *= f32(grid_width) / f32(grid_height)
-
-				w := 0.01 * f32(source_size) / f32(grid_height)
-				d := linalg.length([2]f32{x, y} - [2]f32{0.5, 0.5})
-				s := 1.0 - math.smoothstep(-w/2, +w/2, d - 1.0/4.0)
-				velocity_ping[j][i].x = -2.0*(y - 0.5)*(2.0 * s - 1.0)
-				velocity_ping[j][i].y = +2.0*(x - 0.5)*(2.0 * s - 1.0)
-			}
-		}
-		*/
+		velocity_x_ping[grid_height/2  ][grid_width/2] = 1.0
+		velocity_x_ping[grid_height/2-1][grid_width/2] = 1.0
 	}
 
-	if false {
-		x_velocity_data, x_ok := os.read_entire_file("C:/Users/mv/Downloads/velx_dump")
-		y_velocity_data, y_ok := os.read_entire_file("C:/Users/mv/Downloads/vely_dump")
-		x_velocity := mem.slice_data_cast([]f32, x_velocity_data)
-		y_velocity := mem.slice_data_cast([]f32, y_velocity_data)
-
-		min_x, max_x, min_y, max_y := max(f32), min(f32), max(f32), min(f32)
-		for j in 0..<grid_height {
-			for i in 0..<grid_width {
-				velocity_ping[j][i] = {
-					x_velocity[j*grid_width+i] / 256.0,
-					y_velocity[j*grid_width+i] / 256.0,
-				}
-				min_x = min(min_x, x_velocity[j*grid_width+i])
-				max_x = max(max_x, x_velocity[j*grid_width+i])
-				min_y = min(min_y, y_velocity[j*grid_width+i])
-				max_y = max(max_y, y_velocity[j*grid_width+i])
-			}
-		}
-	}
-
-	//test(grid_width, grid_height, velocity_ping)
 when true {
 	sdl.Init({.VIDEO, .TIMER})
 	defer sdl.Quit()
@@ -97,7 +55,7 @@ when true {
 	assert(font != nil)
 
 	window_width, window_height: i32 = 2*512, 2*512
-	window := sdl.CreateWindow("Test SDL", 50, 50, window_width, window_height, {.SHOWN})
+	window := sdl.CreateWindow("Test SDL", 150, 50, window_width, window_height, {.SHOWN})
 	defer sdl.DestroyWindow(window)
 	assert(window != nil)
 
@@ -107,18 +65,18 @@ when true {
 	assert(renderer != nil)
 
 
-	pressure_ping := make_2D(f32, grid_width, grid_height)
-	pressure_pong := make_2D(f32, grid_width, grid_height)
-	divergence := make_2D(f32, grid_width, grid_height)
-	residual := make_2D(f32, grid_width, grid_height)
+	pressure_ping := make_2D(f32, grid_width+2, grid_height+2)
+	pressure_pong := make_2D(f32, grid_width+2, grid_height+2)
+	divergence    := make_2D(f32, grid_width+2, grid_height+2)
+	residual      := make_2D(f32, grid_width+2, grid_height+2)
 
-	pressure_ping_half := make_2D(f32, grid_width/2, grid_height/2)
-	pressure_pong_half := make_2D(f32, grid_width/2, grid_height/2)
-	divergence_half := make_2D(f32, grid_width/2, grid_height/2)
+	pressure_ping_half := make_2D(f32, (grid_width+1)/2-1+2, (grid_height+1)/2-1+2)
+	pressure_pong_half := make_2D(f32, (grid_width+1)/2-1+2, (grid_height+1)/2-1+2)
+	divergence_half    := make_2D(f32, (grid_width+1)/2-1+2, (grid_height+1)/2-1+2)
 
-	pressure_ping_quarter := make_2D(f32, grid_width/4, grid_height/4)
-	pressure_pong_quarter := make_2D(f32, grid_width/4, grid_height/4)
-	divergence_quarter := make_2D(f32, grid_width/4, grid_height/4)
+	pressure_ping_quarter := make_2D(f32, (grid_width+1)/4-1+2, (grid_height+1)/4-1+2)
+	pressure_pong_quarter := make_2D(f32, (grid_width+1)/4-1+2, (grid_height+1)/4-1+2)
+	divergence_quarter    := make_2D(f32, (grid_width+1)/4-1+2, (grid_height+1)/4-1+2)
 
 	display_texture := sdl.CreateTexture(renderer, u32(sdl.PixelFormatEnum.ABGR8888), .STREAMING, 2*grid_width, 2*grid_height)
 	defer sdl.DestroyTexture(display_texture)
@@ -137,7 +95,7 @@ when true {
 	final_divergence_timer := create_timer(128)
 
 	omega := 1.8
-	omega_smooth := 1.001
+	omega_smooth := 1.0
 
 	key_states: map[sdl.Scancode]bool
 	key_pressed: map[sdl.Scancode]bool
@@ -222,8 +180,8 @@ when true {
 			omega = clamp(omega, 0.0, 2.0)
 		}
 
-		calc_divergence(velocity_ping, divergence, &initial_divergence_timer)
-		if true {
+		calc_divergence(velocity_x_ping, velocity_y_ping, divergence, &initial_divergence_timer)
+		{
 			start_timer(&multigrid_timer)
 			defer stop_timer(&multigrid_timer)
 
@@ -268,15 +226,10 @@ when true {
 				// Post-smooth Full
 				calc_iterate(&pressure_ping, &pressure_pong, divergence, post_smooth_level0, omega_smooth)
 			}
-
-
-		} else {
-			clear_pressure(pressure_ping)
-			calc_jacobi(&pressure_ping, &pressure_pong, divergence, &jacobi_timer, pressure_iterations, omega_smooth)
 		}
 		calc_residual(pressure_ping, residual, divergence)
-		calc_gradient(pressure_ping, velocity_ping, velocity_pong, &gradient_timer)
-		calc_divergence(velocity_pong, divergence, &final_divergence_timer)
+		calc_gradient(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_x_pong, velocity_y_pong, &gradient_timer)
+		calc_divergence(velocity_x_pong, velocity_y_pong, divergence, &final_divergence_timer)
 
 		max_divergence, avg_divergence: f32
 		divergence_bins: [9]f64
@@ -311,8 +264,8 @@ when true {
 				precision_bins[clamp(int(logd + 25), 0, 31)] += 1.0
 			}
 		}
-
 		avg_divergence /= f32(grid_width-1)*f32(grid_height-1)
+
 		// Stream texture
 		{
 			start_timer(&display_write_timer)
@@ -373,7 +326,8 @@ when true {
 
 			for y in 0..<u32(grid_height) {
 				for x in 0..<u32(grid_width) {
-					locked_pixels[u32(2*grid_width)*y + x] = velocity_to_u32(velocity_pong[y][x])
+					v := [2]f32{velocity_x_pong[y][x], velocity_y_pong[y][x]}
+					locked_pixels[u32(2*grid_width)*y + x] = velocity_to_u32(v)
 				}
 				for x in 0..<u32(grid_width) {
 					d := divergence[y][x]
