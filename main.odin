@@ -69,6 +69,9 @@ main :: proc() {
 	assert(display_texture != nil)
 
 	// Grid setup
+	density_ping := make_2D(f32, grid_width, grid_height)
+	density_pong := make_2D(f32, grid_width, grid_height)
+
 	velocity_x_ping := make_2D(f32, grid_width+1, grid_height+0)
 	velocity_x_pong := make_2D(f32, grid_width+1, grid_height+0)
 	velocity_y_ping := make_2D(f32, grid_width+0, grid_height+1)
@@ -89,23 +92,41 @@ main :: proc() {
 
 
 	// Initialization
-	t := i32(10)
-	if true {
-		// Horizontal velocity
-		for j in grid_height/2-t..=grid_height/2+t {
-			for i in grid_width/2-t..=grid_height/2+t+1 {
-				velocity_x_ping[j][i] = -1.0
+
+	init_sim :: proc(density: [][]f32, velocity_x, velocity_y: [][]f32) {
+		grid_height := len(density)
+		grid_width := len(density[0])
+
+		t := int(10)
+		if true {
+			// Horizontal velocity
+			for j in grid_height/2-t..=grid_height/2+t {
+				for i in grid_width/2-t..=grid_height/2+t+1 {
+					velocity_x[j][i] = 1.0
+				}
+			}
+		} 
+		if false {
+			// Vertical velocity
+			for j in grid_height/2-t..=grid_height/2+t+1 {
+				for i in grid_width/2-t..=grid_height/2+t {
+					velocity_y[j][i] = 1.0
+				}
 			}
 		}
-	} 
-	if false {
-		// Vertical velocity
-		for j in grid_height/2-t..=grid_height/2+t+1 {
-			for i in grid_width/2-t..=grid_height/2+t {
-				velocity_y_ping[j][i] = -1.0
+
+		for j in 0..<grid_height {
+			for i in 0..<grid_width {
+				density[j][i] = 0.0
+				if j >= grid_height/2-t && j <= grid_height/2+t {
+					if i >= grid_width/2-t && i <= grid_width/2+t {
+						density[j][i] = 1.0
+					}
+				}
 			}
 		}
 	}
+	init_sim(density_ping, velocity_x_ping, velocity_y_ping)
 
 	omega := 1.86
 	omega_smooth := 1.2
@@ -132,6 +153,45 @@ main :: proc() {
 	multigrid_timer          := create_timer(64)
 	gradient_timer           := create_timer(64)
 	final_divergence_timer   := create_timer(64)
+
+
+	advect_density :: proc(density_ping, density_pong: ^[][]f32, velocity_x, velocity_y: [][]f32, dt: f32) {
+		grid_width := len(density_ping[0])
+		grid_height := len(density_ping^)
+
+		for j in 0..<grid_height {
+			for i in 0..<grid_width {
+				p := [2]f32{f32(i), f32(j)} + 0.5
+
+				vx := 0.5 * (velocity_x[j][i] + velocity_x[j][i+1])
+				vy := 0.5 * (velocity_y[j][i] + velocity_y[j+1][i])
+
+				q := p - [2]f32{vx, vy} * dt
+
+				x := math.floor(q.x - 0.5)
+				y := math.floor(q.y - 0.5)
+
+				tx := (q.x - 0.5) - x
+				ty := (q.y - 0.5) - y
+
+				xi := int(x)
+				yi := int(y)
+
+				V00 := 0.0 if xi   < 0 || yi   < 0 || xi   >= grid_width || yi   >= grid_height else density_ping[yi  ][xi  ]
+				V10 := 0.0 if xi+1 < 0 || yi   < 0 || xi+1 >= grid_width || yi   >= grid_height else density_ping[yi  ][xi+1]
+				V01 := 0.0 if xi   < 0 || yi+1 < 0 || xi   >= grid_width || yi+1 >= grid_height else density_ping[yi+1][xi  ]
+				V11 := 0.0 if xi+1 < 0 || yi+1 < 0 || xi+1 >= grid_width || yi+1 >= grid_height else density_ping[yi+1][xi+1]
+
+				V0 := V00 * (1.0 - ty) + V01 * ty
+				V1 := V10 * (1.0 - ty) + V11 * ty
+
+				V := V0 * (1.0 - tx) + V1 * tx
+				density_pong[j][i] = V
+			}
+		}
+
+		density_ping^, density_pong^ = density_pong^, density_ping^
+	}
 
 	for frame := u32(0); !should_quit; frame += 1 {
 		stop_timer(&frame_timer)
@@ -190,6 +250,10 @@ main :: proc() {
 			}
 			if key_pressed[.NUM7] {
 				omega_smooth -= 1/f64((muls2[0])*(muls2[1])*(muls2[2]))
+			}
+
+			if key_pressed[.R] {
+				init_sim(density_ping, velocity_x_ping, velocity_y_ping)
 			}
 
 			pressure_iterations = max(0, pressure_iterations)
@@ -255,6 +319,7 @@ main :: proc() {
 		calc_gradient(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_x_pong, velocity_y_pong, &gradient_timer)
 		calc_divergence(velocity_x_pong, velocity_y_pong, divergence, &final_divergence_timer)
 
+		advect_density(&density_ping, &density_pong, velocity_x_pong, velocity_y_pong, 1.0)
 		// Stats
 		max_divergence, avg_divergence: f32
 		divergence_bins: [9]f64
@@ -346,8 +411,7 @@ main :: proc() {
 					locked_pixels[u32(2*grid_width)*y + x] = velocity_to_u32(v)
 				}
 				for x in 0..<u32(grid_width) {
-					d := divergence[1+y][1+x]
-					locked_pixels[u32(2*grid_width)*y + x + u32(grid_width)] = scalar_to_u32_logarithmic(d)
+					locked_pixels[u32(2*grid_width)*y + x + u32(grid_width)] = scalar_to_u32_linear(density_ping[y][x])
 				}
 			}
 
