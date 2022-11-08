@@ -96,7 +96,7 @@ main :: proc() {
 	init_sim :: proc(density: [][]f32, velocity_x, velocity_y: [][]f32) {
 		grid_height := len(density)
 		grid_width := len(density[0])
-		
+
 		t := int(10)
 
 		for j in 0..<grid_height {
@@ -265,6 +265,8 @@ main :: proc() {
 
 	}
 
+	pause := false
+
 	for frame := u32(0); !should_quit; frame += 1 {
 		stop_timer(&frame_timer)
 		start_timer(&frame_timer)
@@ -283,6 +285,7 @@ main :: proc() {
 			}
 		}
 
+		just_reset := false
 		{
 			// Input handing
 
@@ -326,6 +329,11 @@ main :: proc() {
 
 			if key_pressed[.R] {
 				init_sim(density_ping, velocity_x_ping, velocity_y_ping)
+				just_reset = true
+			}
+
+			if key_pressed[.SPACE] {
+				pause = !pause
 			}
 
 			pressure_iterations = max(0, pressure_iterations)
@@ -333,66 +341,72 @@ main :: proc() {
 			omega = clamp(omega, 0.0, 2.0)
 		}
 
-		calc_divergence(velocity_x_ping, velocity_y_ping, divergence, &initial_divergence_timer)
-		{
-			start_timer(&multigrid_timer)
-			defer stop_timer(&multigrid_timer)
-
-			// Init Full
+		if just_reset {
+			calc_divergence(velocity_x_ping, velocity_y_ping, divergence, &initial_divergence_timer)
 			clear_pressure(pressure_ping)
+			calc_residual(pressure_ping, residual, divergence)
+		} else if !pause {
+			{
+				calc_divergence(velocity_x_ping, velocity_y_ping, divergence, &initial_divergence_timer)
+				start_timer(&multigrid_timer)
+				defer stop_timer(&multigrid_timer)
 
-			// Pre-smooth Full
-			calc_iterate(&pressure_ping, &pressure_pong, divergence, pre_smooth_level0, omega_smooth)
+				// Init Full
+				clear_pressure(pressure_ping)
 
-			for iter in 0..<pressure_iterations {
-				// Descend Full -> Quarter
-				calc_residual(pressure_ping, pressure_pong, divergence)
-				calc_restriction(pressure_pong, divergence_half)
-				for j in 0..<(grid_height+1)/2-1 do for i in 0..<(grid_width+1)/2-1 {
-					// Free iteration
-					pressure_ping_half[1+j][1+i] = f32(omega_smooth) * 0.25 * divergence_half[1+j][1+i]
+				// Pre-smooth Full
+				calc_iterate(&pressure_ping, &pressure_pong, divergence, pre_smooth_level0, omega_smooth)
+
+				for iter in 0..<pressure_iterations {
+					// Descend Full -> Quarter
+					calc_residual(pressure_ping, pressure_pong, divergence)
+					calc_restriction(pressure_pong, divergence_half)
+					for j in 0..<(grid_height+1)/2-1 do for i in 0..<(grid_width+1)/2-1 {
+						// Free iteration
+						pressure_ping_half[1+j][1+i] = f32(omega_smooth) * 0.25 * divergence_half[1+j][1+i]
+					}
+					
+					// Pre-smooth Half
+					calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, pre_smooth_level1, omega_smooth)
+
+					// Descend Half -> Quarter
+					calc_residual(pressure_ping_half, pressure_pong_half, divergence_half)
+					calc_restriction(pressure_pong_half, divergence_quarter)
+					for j in 0..<(grid_height+1)/4-1 do for i in 0..<(grid_width+1)/4-1 {
+						// Free iteration
+						pressure_ping_quarter[1+j][1+i] = f32(omega) * 0.25 * divergence_quarter[1+j][1+i]
+					}
+
+					// Init Quarter
+					clear_pressure(pressure_ping_quarter)
+
+					// Solve Quarter
+					calc_iterate(&pressure_ping_quarter, &pressure_pong_quarter, divergence_quarter, solve_iter_level2, omega)
+
+					// Ascend Quarter -> Half
+					calc_prolongation(pressure_ping_quarter, pressure_pong_half)
+					for j in 0..<(grid_height+1)/2-1 do for i in 0..<(grid_width+1)/2-1 {
+						pressure_ping_half[1+j][1+i] += pressure_pong_half[1+j][1+i]
+					}
+
+					// Post-smooth Half
+					calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, post_smooth_level1, omega_smooth)
+
+					// Ascend Half -> Full
+					calc_prolongation(pressure_ping_half, pressure_pong)
+					for j in 0..<grid_height do for i in 0..<grid_width do pressure_ping[1+j][1+i] += pressure_pong[1+j][1+i]
+
+					// Post-smooth Full
+					calc_iterate(&pressure_ping, &pressure_pong, divergence, post_smooth_level0, omega_smooth)
 				}
-				
-				// Pre-smooth Half
-				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, pre_smooth_level1, omega_smooth)
-
-				// Descend Half -> Quarter
-				calc_residual(pressure_ping_half, pressure_pong_half, divergence_half)
-				calc_restriction(pressure_pong_half, divergence_quarter)
-				for j in 0..<(grid_height+1)/4-1 do for i in 0..<(grid_width+1)/4-1 {
-					// Free iteration
-					pressure_ping_quarter[1+j][1+i] = f32(omega) * 0.25 * divergence_quarter[1+j][1+i]
-				}
-
-				// Init Quarter
-				clear_pressure(pressure_ping_quarter)
-
-				// Solve Quarter
-				calc_iterate(&pressure_ping_quarter, &pressure_pong_quarter, divergence_quarter, solve_iter_level2, omega)
-
-				// Ascend Quarter -> Half
-				calc_prolongation(pressure_ping_quarter, pressure_pong_half)
-				for j in 0..<(grid_height+1)/2-1 do for i in 0..<(grid_width+1)/2-1 {
-					pressure_ping_half[1+j][1+i] += pressure_pong_half[1+j][1+i]
-				}
-
-				// Post-smooth Half
-				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, post_smooth_level1, omega_smooth)
-
-				// Ascend Half -> Full
-				calc_prolongation(pressure_ping_half, pressure_pong)
-				for j in 0..<grid_height do for i in 0..<grid_width do pressure_ping[1+j][1+i] += pressure_pong[1+j][1+i]
-
-				// Post-smooth Full
-				calc_iterate(&pressure_ping, &pressure_pong, divergence, post_smooth_level0, omega_smooth)
 			}
-		}
-		calc_residual(pressure_ping, residual, divergence)
-		calc_gradient(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_x_ping, velocity_y_ping, &gradient_timer)
-		//calc_divergence(velocity_x_pong, velocity_y_pong, divergence, &final_divergence_timer)
+			calc_residual(pressure_ping, residual, divergence)
+			calc_gradient(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_x_ping, velocity_y_ping, &gradient_timer)
 
-		advect_density(&density_ping, &density_pong, velocity_x_pong, velocity_y_pong, 1.0)
-		advect_velocity(&velocity_x_ping, &velocity_x_pong, &velocity_y_ping, &velocity_y_pong, 1.0)
+			advect_density(&density_ping, &density_pong, velocity_x_pong, velocity_y_pong, 1.0)
+			advect_velocity(&velocity_x_ping, &velocity_x_pong, &velocity_y_ping, &velocity_y_pong, 1.0)
+		}
+
 		// Stats
 		max_divergence, avg_divergence: f32
 		divergence_bins: [9]f64
