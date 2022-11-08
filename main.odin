@@ -33,12 +33,12 @@ free_2D :: proc(grid: [][]$T) {
 
 
 main :: proc() {
-	grid_width, grid_height: i32 = 31, 31
+	grid_width, grid_height: i32 = 255, 255
 	velocity_x_ping := make_2D(f32, grid_width+1, grid_height+0)
 	velocity_x_pong := make_2D(f32, grid_width+1, grid_height+0)
 	velocity_y_ping := make_2D(f32, grid_width+0, grid_height+1)
 	velocity_y_pong := make_2D(f32, grid_width+0, grid_height+1)
-	t := i32(0)
+	t := i32(5)
 	for j in grid_height/2-t..=grid_height/2+t {
 		for i in grid_width/2-t..=grid_height/2+t+1 {
 			velocity_x_ping[j][i] = 1.0
@@ -56,7 +56,7 @@ main :: proc() {
 	defer sdl_ttf.CloseFont(font)
 	assert(font != nil)
 
-	window_width, window_height: i32 = 2*512, 2*512
+	window_width, window_height: i32 = 4*grid_width, 4*grid_height
 	window := sdl.CreateWindow("Test SDL", 150, 50, window_width, window_height, {.SHOWN})
 	defer sdl.DestroyWindow(window)
 	assert(window != nil)
@@ -85,19 +85,19 @@ main :: proc() {
 	assert(display_texture != nil)
 
 
-	frame_timer := create_timer(128)
+	frame_timer := create_timer(64)
 	start_timer(&frame_timer)
 
-	display_write_timer      := create_timer(128)
-	debug_text_timer         := create_timer(128)
-	initial_divergence_timer := create_timer(128)
-	jacobi_timer             := create_timer(128)
-	multigrid_timer          := create_timer(128)
-	gradient_timer           := create_timer(128)
-	final_divergence_timer   := create_timer(128)
+	display_write_timer      := create_timer(64)
+	debug_text_timer         := create_timer(64)
+	initial_divergence_timer := create_timer(64)
+	jacobi_timer             := create_timer(64)
+	multigrid_timer          := create_timer(64)
+	gradient_timer           := create_timer(64)
+	final_divergence_timer   := create_timer(64)
 
-	omega := 1.0
-	omega_smooth := 1.0
+	omega := 1.8
+	omega_smooth := 0.8
 
 	key_states: map[sdl.Scancode]bool
 	key_pressed: map[sdl.Scancode]bool
@@ -113,7 +113,7 @@ main :: proc() {
 
 	pre_smooth_level0: int = 1
 	pre_smooth_level1: int = 1
-	solve_iter_level2: int = 2 * int(max(grid_width, grid_height)) / 4
+	solve_iter_level2: int = 2 * int(max(grid_width, grid_height)+1) / 4
 	post_smooth_level1: int = 4
 	post_smooth_level0: int = 2
 
@@ -198,16 +198,21 @@ main :: proc() {
 				// Descend Full -> Quarter
 				calc_residual(pressure_ping, pressure_pong, divergence)
 				calc_restriction(pressure_pong, divergence_half)
+				for j in 0..<(grid_height+1)/2-1 do for i in 0..<(grid_width+1)/2-1 {
+					// Free iteration
+					pressure_ping_half[1+j][1+i] = f32(omega_smooth) * 0.25 * divergence_half[1+j][1+i]
+				}
 				
-				// Init Half
-				clear_pressure(pressure_ping_half)
-
 				// Pre-smooth Half
 				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, pre_smooth_level1, omega_smooth)
 
 				// Descend Half -> Quarter
 				calc_residual(pressure_ping_half, pressure_pong_half, divergence_half)
 				calc_restriction(pressure_pong_half, divergence_quarter)
+				for j in 0..<(grid_height+1)/4-1 do for i in 0..<(grid_width+1)/4-1 {
+					// Free iteration
+					pressure_ping_quarter[1+j][1+i] = f32(omega) * 0.25 * divergence_quarter[1+j][1+i]
+				}
 
 				// Init Quarter
 				clear_pressure(pressure_ping_quarter)
