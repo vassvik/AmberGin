@@ -101,24 +101,51 @@ main :: proc() {
 
 		for j in 0..<grid_height {
 			for i in 0..<grid_width {
+				density[j][i] = 0.0
+			}
+		}
+
+		for j in 0..<grid_height {
+			for i in 0..<grid_width+1 {
 				// Horizontal velocity
 				velocity_x[j][i] = 0.0
+			}
+		}
+
+		for j in 0..<grid_height+1 {
+			for i in 0..<grid_width {
+				// Horizontal velocity
 				velocity_y[j][i] = 0.0
+			}
+		}
+	}
+
+	inject :: proc(density, velocity_x, velocity_y: [][]f32) {
+		grid_height := len(density)
+		grid_width := len(density[0])
+
+		t := int(10)
+
+		for j in 0..<grid_height {
+			for i in 0..<grid_width {
+				// Horizontal velocity
+				//velocity_x[j][i] = 0.0
+				//velocity_y[j][i] = 0.0
 				if j >= grid_height/2-t && j <= grid_height/2+t {
 					if i >= grid_width/2-t && i <= grid_height/2+t+1 {
-						velocity_x[j][i] = 1.0
+						velocity_x[j][i-100] = 10.0
 					}
 				}
 
-				density[j][i] = 0.0
 				if j >= grid_height/2-t && j <= grid_height/2+t {
 					if i >= grid_width/2-t && i <= grid_width/2+t {
-						density[j][i] = 1.0
+						density[j][i-100] = 1.0
 					}
 				}
 			}
 		}
 	}
+
 	init_sim(density_ping, velocity_x_ping, velocity_y_ping)
 
 	omega := 1.86
@@ -142,13 +169,12 @@ main :: proc() {
 
 	display_write_timer      := create_timer(64)
 	debug_text_timer         := create_timer(64)
-	initial_divergence_timer := create_timer(64)
-	multigrid_timer          := create_timer(64)
-	gradient_timer           := create_timer(64)
-	final_divergence_timer   := create_timer(64)
+	projection_timer          := create_timer(64)
+	advection_timer          := create_timer(64)
+	injection_timer          := create_timer(64)
 
 
-	advect_density :: proc(density_ping, density_pong: ^[][]f32, velocity_x, velocity_y: [][]f32, dt: f32) {
+	advect :: proc(density_ping, density_pong, velocity_x_ping, velocity_x_pong, velocity_y_ping, velocity_y_pong: ^[][]f32, dt: f32) {
 		grid_width := len(density_ping[0])
 		grid_height := len(density_ping^)
 
@@ -156,8 +182,8 @@ main :: proc() {
 			for i in 0..<grid_width {
 				p := [2]f32{f32(i), f32(j)} + 0.5
 
-				vx := 0.5 * (velocity_x[j][i] + velocity_x[j][i+1])
-				vy := 0.5 * (velocity_y[j][i] + velocity_y[j+1][i])
+				vx := 0.5 * (velocity_x_ping[j][i] + velocity_x_ping[j][i+1])
+				vy := 0.5 * (velocity_y_ping[j][i] + velocity_y_ping[j+1][i])
 
 				q := p - [2]f32{vx, vy} * dt
 
@@ -182,13 +208,6 @@ main :: proc() {
 				density_pong[j][i] = V
 			}
 		}
-
-		density_ping^, density_pong^ = density_pong^, density_ping^
-	}
-
-	advect_velocity :: proc(velocity_x_ping, velocity_x_pong, velocity_y_ping, velocity_y_pong: ^[][]f32, dt: f32) {
-		grid_width := len(velocity_x_ping[0])-1
-		grid_height := len(velocity_x_ping^)
 
 		for j in 0..<grid_height {
 			for i in 0..<grid_width+1 {
@@ -260,6 +279,7 @@ main :: proc() {
 			}
 		}
 
+		density_ping^, density_pong^ = density_pong^, density_ping^
 		velocity_x_ping^, velocity_x_pong^ = velocity_x_pong^, velocity_x_ping^
 		velocity_y_ping^, velocity_y_pong^ = velocity_y_pong^, velocity_y_ping^
 
@@ -342,95 +362,108 @@ main :: proc() {
 		}
 
 		if just_reset {
-			calc_divergence(velocity_x_ping, velocity_y_ping, divergence, &initial_divergence_timer)
+			calc_divergence(velocity_x_ping, velocity_y_ping, divergence)
 			clear_pressure(pressure_ping)
 			calc_residual(pressure_ping, residual, divergence)
 		} else if !pause {
 			{
-				calc_divergence(velocity_x_ping, velocity_y_ping, divergence, &initial_divergence_timer)
-				start_timer(&multigrid_timer)
-				defer stop_timer(&multigrid_timer)
+				{
+					start_timer(&advection_timer)
+					defer stop_timer(&advection_timer)
 
-				// Init Full
-				clear_pressure(pressure_ping)
+					advect(&density_ping, &density_pong, &velocity_x_ping, &velocity_x_pong, &velocity_y_ping, &velocity_y_pong, 1.0)
+				}
+				{
+					start_timer(&injection_timer)
+					defer stop_timer(&injection_timer)
+					inject(density_ping, velocity_x_ping, velocity_y_ping)
+				}
 
-				// Pre-smooth Full
-				calc_iterate(&pressure_ping, &pressure_pong, divergence, pre_smooth_level0, omega_smooth)
+				{
+					start_timer(&projection_timer)
+					defer stop_timer(&projection_timer)
 
-				for iter in 0..<pressure_iterations {
-					// Descend Full -> Quarter
-					calc_residual(pressure_ping, pressure_pong, divergence)
-					calc_restriction(pressure_pong, divergence_half)
-					for j in 0..<(grid_height+1)/2-1 do for i in 0..<(grid_width+1)/2-1 {
-						// Free iteration
-						pressure_ping_half[1+j][1+i] = f32(omega_smooth) * 0.25 * divergence_half[1+j][1+i]
+					calc_divergence(velocity_x_ping, velocity_y_ping, divergence)
+
+					// Init Full
+					clear_pressure(pressure_ping)
+
+					// Pre-smooth Full
+					calc_iterate(&pressure_ping, &pressure_pong, divergence, pre_smooth_level0, omega_smooth)
+
+					for iter in 0..<pressure_iterations {
+						// Descend Full -> Quarter
+						calc_residual(pressure_ping, pressure_pong, divergence)
+						calc_restriction(pressure_pong, divergence_half)
+						for j in 0..<(grid_height+1)/2-1 do for i in 0..<(grid_width+1)/2-1 {
+							// Free iteration
+							pressure_ping_half[1+j][1+i] = f32(omega_smooth) * 0.25 * divergence_half[1+j][1+i]
+						}
+						
+						// Pre-smooth Half
+						calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, pre_smooth_level1, omega_smooth)
+
+						// Descend Half -> Quarter
+						calc_residual(pressure_ping_half, pressure_pong_half, divergence_half)
+						calc_restriction(pressure_pong_half, divergence_quarter)
+						for j in 0..<(grid_height+1)/4-1 do for i in 0..<(grid_width+1)/4-1 {
+							// Free iteration
+							pressure_ping_quarter[1+j][1+i] = f32(omega) * 0.25 * divergence_quarter[1+j][1+i]
+						}
+
+						// Init Quarter
+						clear_pressure(pressure_ping_quarter)
+
+						// Solve Quarter
+						calc_iterate(&pressure_ping_quarter, &pressure_pong_quarter, divergence_quarter, solve_iter_level2, omega)
+
+						// Ascend Quarter -> Half
+						calc_prolongation(pressure_ping_quarter, pressure_pong_half)
+						for j in 0..<(grid_height+1)/2-1 do for i in 0..<(grid_width+1)/2-1 {
+							pressure_ping_half[1+j][1+i] += pressure_pong_half[1+j][1+i]
+						}
+
+						// Post-smooth Half
+						calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, post_smooth_level1, omega_smooth)
+
+						// Ascend Half -> Full
+						calc_prolongation(pressure_ping_half, pressure_pong)
+						for j in 0..<grid_height do for i in 0..<grid_width do pressure_ping[1+j][1+i] += pressure_pong[1+j][1+i]
+
+						// Post-smooth Full
+						calc_iterate(&pressure_ping, &pressure_pong, divergence, post_smooth_level0, omega_smooth)
 					}
-					
-					// Pre-smooth Half
-					calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, pre_smooth_level1, omega_smooth)
 
-					// Descend Half -> Quarter
-					calc_residual(pressure_ping_half, pressure_pong_half, divergence_half)
-					calc_restriction(pressure_pong_half, divergence_quarter)
-					for j in 0..<(grid_height+1)/4-1 do for i in 0..<(grid_width+1)/4-1 {
-						// Free iteration
-						pressure_ping_quarter[1+j][1+i] = f32(omega) * 0.25 * divergence_quarter[1+j][1+i]
-					}
-
-					// Init Quarter
-					clear_pressure(pressure_ping_quarter)
-
-					// Solve Quarter
-					calc_iterate(&pressure_ping_quarter, &pressure_pong_quarter, divergence_quarter, solve_iter_level2, omega)
-
-					// Ascend Quarter -> Half
-					calc_prolongation(pressure_ping_quarter, pressure_pong_half)
-					for j in 0..<(grid_height+1)/2-1 do for i in 0..<(grid_width+1)/2-1 {
-						pressure_ping_half[1+j][1+i] += pressure_pong_half[1+j][1+i]
-					}
-
-					// Post-smooth Half
-					calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, post_smooth_level1, omega_smooth)
-
-					// Ascend Half -> Full
-					calc_prolongation(pressure_ping_half, pressure_pong)
-					for j in 0..<grid_height do for i in 0..<grid_width do pressure_ping[1+j][1+i] += pressure_pong[1+j][1+i]
-
-					// Post-smooth Full
-					calc_iterate(&pressure_ping, &pressure_pong, divergence, post_smooth_level0, omega_smooth)
+					calc_residual(pressure_ping, residual, divergence)
+					calc_gradient(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_x_ping, velocity_y_ping)
 				}
 			}
-			calc_residual(pressure_ping, residual, divergence)
-			calc_gradient(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_x_ping, velocity_y_ping, &gradient_timer)
-
-			advect_density(&density_ping, &density_pong, velocity_x_pong, velocity_y_pong, 1.0)
-			advect_velocity(&velocity_x_ping, &velocity_x_pong, &velocity_y_ping, &velocity_y_pong, 1.0)
 		}
 
 		// Stats
-		max_divergence, avg_divergence: f32
-		divergence_bins: [9]f64
+		max_residual, avg_residual: f32
+		residual_bins: [9]f64
 		for j in 0..<grid_height {
 			for i in 0..<grid_width {
-				d := abs(divergence[1+j][1+i])
+				d := abs(residual[1+j][1+i])
 
 				logd := math.log(d, 10.0)
 
-				max_divergence = max(d, max_divergence)
-				avg_divergence += d
+				max_residual = max(d, max_residual)
+				avg_residual += d
 
-				divergence_bins[clamp(int(math.floor(logd)) + 8, 0, 8)] += 1
+				residual_bins[clamp(int(math.floor(logd)) + 8, 0, 8)] += 1
 			}
 		}
-		avg_divergence /= f32(grid_width)*f32(grid_height)
+		avg_residual /= f32(grid_width)*f32(grid_height)
 
 		if key_pressed[.TAB] {
 			sum_bins: f64 = 0
 			for i in 0..<9 {
-			 	sum_bins += divergence_bins[i]
+			 	sum_bins += residual_bins[i]
 			}
 
-			fmt.printf("%+ 7f\n", 100*divergence_bins / sum_bins)
+			fmt.printf("%+ 7f\n", 100*residual_bins / sum_bins)
 		}
 
 
@@ -527,14 +560,13 @@ main :: proc() {
 			render_string(font, renderer, fmt.tprintf("Iterations: Pre: %d %d, Solve: %d, Post: %d %d\x00", pre_smooth_level0, pre_smooth_level1, solve_iter_level2, post_smooth_level1, post_smooth_level0), 0, cursor, text_color); cursor += 24
 			render_string(font, renderer, fmt.tprintf("Omega: Smooth: %f, Solve: %f\x00", omega_smooth, omega), 0, cursor, text_color); cursor += 16
 
-			render_string(font, renderer, fmt.tprintf("Divergence, Max: %.6e, Avg: %.6e\x00", max_divergence, avg_divergence), 0, cursor, text_color); cursor += 24
+			render_string(font, renderer, fmt.tprintf("Residual, Max: %.6e, Avg: %.6e\x00", max_residual, avg_residual), 0, cursor, text_color); cursor += 24
 			
 			render_string(font, renderer, fmt.tprintf("Frame              % 7f +/- %f (%f)\x00", frame_timer.average, frame_timer.std, frame_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Display Write      % 7f +/- %f (%f)\x00", display_write_timer.average, display_write_timer.std, display_write_timer.ste), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Initial Divergence % 7f +/- %f (%f)\x00", initial_divergence_timer.average, initial_divergence_timer.std, initial_divergence_timer.ste), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Multigrid          % 7f +/- %f (%f)\x00", multigrid_timer.average, multigrid_timer.std, multigrid_timer.ste), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Gradient           % 7f +/- %f (%f)\x00", gradient_timer.average, gradient_timer.std, gradient_timer.ste), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Final Divergence   % 7f +/- %f (%f)\x00", final_divergence_timer.average, final_divergence_timer.std, final_divergence_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Advection          % 7f +/- %f (%f)\x00", advection_timer.average, advection_timer.std, advection_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Injection          % 7f +/- %f (%f)\x00", injection_timer.average, injection_timer.std, injection_timer.ste), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Projection         % 7f +/- %f (%f)\x00", projection_timer.average, projection_timer.std, projection_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Debug Text         % 7f +/- %f (%f)\x00", debug_text_timer.average, debug_text_timer.std, debug_text_timer.ste), 0, cursor, text_color); cursor += 16
 		}
 		sdl.RenderPresent(renderer);

@@ -2,13 +2,10 @@ package ambergin
 
 import "core:math/linalg"
 
-calc_divergence :: proc(velocity_x, velocity_y: [][]f32, divergence: [][]f32, timer: ^Timer($N)) {
+calc_divergence :: proc(velocity_x, velocity_y: [][]f32, divergence: [][]f32) {
 	grid_width := len(velocity_x[0]) - 1
 	grid_height := len(velocity_x)
 	
-	start_timer(timer)
-	defer stop_timer(timer)
-
 	// Calculate divergence
 	for j in 0..<grid_height {
 		for i in 0..<grid_width {
@@ -41,13 +38,6 @@ calc_stencil_pressure :: proc(input, output, rhs: [][]f32, omega: f64, i, j: int
 
 	p := (rhs[j][i] + pW + pE + pS + pN) / 4.0
 	output[j][i] = linalg.mix(input[j][i], p, f32(omega))
-}
-
-calc_jacobi :: proc(pressure_ping, pressure_pong: ^[][]f32, divergence: [][]f32, timer: ^Timer($N), iterations: int, omega_solve: f64) {
-	start_timer(timer)
-	defer stop_timer(timer)
-
-	calc_iterate(pressure_ping, pressure_pong, divergence, iterations, omega_solve)
 }
 
 calc_iterate :: proc(pressure_ping, pressure_pong: ^[][]f32, divergence: [][]f32, iterations: int, omega_solve: f64) {
@@ -105,10 +95,7 @@ calc_residual :: proc(pressure_ping, residual, divergence: [][]f32) {
 }
 
 
-calc_gradient :: proc(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_x_pong, velocity_y_pong: [][]f32, timer: ^Timer($N)) {
-	start_timer(timer)
-	defer stop_timer(timer)
-	
+calc_gradient :: proc(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_x_pong, velocity_y_pong: [][]f32) {
 	grid_width := len(pressure_ping[0]) - 2
 	grid_height := len(pressure_ping) - 2
 
