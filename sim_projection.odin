@@ -62,6 +62,8 @@ calc_jacobi :: proc(pressure_ping, pressure_pong: ^[][]f32, divergence: [][]f32,
 	calc_iterate(pressure_ping, pressure_pong, divergence, iterations, omega_solve)
 }
 
+import "core:fmt"
+
 calc_iterate :: proc(pressure_ping, pressure_pong: ^[][]f32, divergence: [][]f32, iterations: int, omega_solve: f64) {
 	grid_width := len(pressure_ping[0]) - 2
 	grid_height := len(pressure_ping) - 2
@@ -75,16 +77,22 @@ calc_iterate :: proc(pressure_ping, pressure_pong: ^[][]f32, divergence: [][]f32
 			}
 		}
 
-		{
+		if omega_solve > 1.0 {
 			for j in 0..<grid_height {
 				for i in 0..<grid_width {
-					if omega_solve > 1.0 && ((i ~ j) & 1) == 0 do continue
+					if ((i ~ j) & 1) == 0 do continue
 					calc_stencil_pressure(pressure_ping^, output^, divergence, omega_solve, 1+i, 1+j)
 				}
 			}
 			for j in 0..<grid_height {
 				for i in 0..<grid_width {
-					if omega_solve > 1.0 && ((i ~ j) & 1) == 1 do continue
+					if ((i ~ j) & 1) == 1 do continue
+					calc_stencil_pressure(pressure_ping^, output^, divergence, omega_solve, 1+i, 1+j)
+				}
+			}
+		} else {
+			for j in 0..<grid_height {
+				for i in 0..<grid_width {
 					calc_stencil_pressure(pressure_ping^, output^, divergence, omega_solve, 1+i, 1+j)
 				}
 			}
@@ -160,15 +168,15 @@ calc_restriction :: proc(fine_grid: [][]f32, coarse_grid: [][]f32) {
 
 	for j in 0..<coarse_grid_height {
 		for i in 0..<coarse_grid_width {
-			rSW := fine_grid[1+2*j-1][1+2*i-1]
-			rS  := fine_grid[1+2*j-1][1+2*i+0]
-			rSE := fine_grid[1+2*j-1][1+2*i+1]
-			rW  := fine_grid[1+2*j+0][1+2*i-1]
-			rC  := fine_grid[1+2*j+0][1+2*i+0]
-			rE  := fine_grid[1+2*j+0][1+2*i+1]
-			rNW := fine_grid[1+2*j+1][1+2*i-1]
-			rN  := fine_grid[1+2*j+1][1+2*i+0]
-			rNE := fine_grid[1+2*j+1][1+2*i+1]
+			rSW := fine_grid[2*(1+j)-1][2*(1+i)-1]
+			rS  := fine_grid[2*(1+j)-1][2*(1+i)+0]
+			rSE := fine_grid[2*(1+j)-1][2*(1+i)+1]
+			rW  := fine_grid[2*(1+j)+0][2*(1+i)-1]
+			rC  := fine_grid[2*(1+j)+0][2*(1+i)+0]
+			rE  := fine_grid[2*(1+j)+0][2*(1+i)+1]
+			rNW := fine_grid[2*(1+j)+1][2*(1+i)-1]
+			rN  := fine_grid[2*(1+j)+1][2*(1+i)+0]
+			rNE := fine_grid[2*(1+j)+1][2*(1+i)+1]
 
 			r := (1.0 * (rSW + rSE + rNW + rNE) + 2.0 * (rS + rW + rE + rN) + 4.0 * rC) / 16.0
 			coarse_grid[1+j][1+i] = 4.0 * r
@@ -195,12 +203,13 @@ calc_prolongation :: proc(coarse_grid: [][]f32, fine_grid: [][]f32) {
 	assert((fine_grid_width+1) == (coarse_grid_width+1)*2)
 	assert((fine_grid_height+1) == (coarse_grid_height+1)*2)
 
-	for j in 0..<fine_grid_height {
-		for i in 0..<fine_grid_width {
-			e00 := coarse_grid[1+(j/2)+0*(j%2)][1+(i/2)+0*(i%2)]
-			e10 := coarse_grid[1+(j/2)+0*(j%2)][1+(i/2)+1*(i%2)]
-			e01 := coarse_grid[1+(j/2)+1*(j%2)][1+(i/2)+0*(i%2)]
-			e11 := coarse_grid[1+(j/2)+1*(j%2)][1+(i/2)+1*(i%2)]
+	for j in 1..=fine_grid_height {
+		for i in 1..=fine_grid_width {
+
+			e00 := coarse_grid[(j/2)+0*(j%2)][(i/2)+0*(i%2)]
+			e10 := coarse_grid[(j/2)+0*(j%2)][(i/2)+1*(i%2)]
+			e01 := coarse_grid[(j/2)+1*(j%2)][(i/2)+0*(i%2)]
+			e11 := coarse_grid[(j/2)+1*(j%2)][(i/2)+1*(i%2)]
 			fine_grid[j][i] = 0.25 * (e00 + e10 + e01 + e11)
 		}
 	}

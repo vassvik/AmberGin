@@ -42,10 +42,10 @@ main :: proc() {
 	for j in grid_height/2-t..=grid_height/2+t {
 		for i in grid_width/2-t..=grid_height/2+t+1 {
 			velocity_x_ping[j][i] = 1.0
+			fmt.println(i, j)
 		}
 	}
 
-when true {
 	sdl.Init({.VIDEO, .TIMER})
 	defer sdl.Quit()
 
@@ -88,15 +88,15 @@ when true {
 	frame_timer := create_timer(128)
 	start_timer(&frame_timer)
 
-	display_write_timer := create_timer(128)
-	debug_text_timer := create_timer(128)
+	display_write_timer      := create_timer(128)
+	debug_text_timer         := create_timer(128)
 	initial_divergence_timer := create_timer(128)
-	jacobi_timer := create_timer(128)
-	multigrid_timer := create_timer(128)
-	gradient_timer := create_timer(128)
-	final_divergence_timer := create_timer(128)
+	jacobi_timer             := create_timer(128)
+	multigrid_timer          := create_timer(128)
+	gradient_timer           := create_timer(128)
+	final_divergence_timer   := create_timer(128)
 
-	omega := 1.8
+	omega := 1.0
 	omega_smooth := 1.0
 
 	key_states: map[sdl.Scancode]bool
@@ -118,8 +118,9 @@ when true {
 	post_smooth_level0: int = 2
 
 	should_quit := false
-	
-	for pressure_iterations := 0; pressure_iterations <= 10; pressure_iterations += 1 do for frame := u32(0); !should_quit; frame += 1 {
+	pressure_iterations := 0
+
+	for frame := u32(0); !should_quit; frame += 1 {
 		stop_timer(&frame_timer)
 		start_timer(&frame_timer)
 
@@ -216,14 +217,16 @@ when true {
 
 				// Ascend Quarter -> Half
 				calc_prolongation(pressure_ping_quarter, pressure_pong_half)
-				for j in 1..<grid_height/2 do for i in 1..<grid_width/2 do pressure_ping_half[j][i] += pressure_pong_half[j][i]
+				for j in 0..<(grid_height+1)/2-1 do for i in 0..<(grid_width+1)/2-1 {
+					pressure_ping_half[1+j][1+i] += pressure_pong_half[1+j][1+i]
+				}
 
 				// Post-smooth Half
 				calc_iterate(&pressure_ping_half, &pressure_pong_half, divergence_half, post_smooth_level1, omega_smooth)
 
 				// Ascend Half -> Full
 				calc_prolongation(pressure_ping_half, pressure_pong)
-				for j in 1..<grid_height do for i in 1..<grid_width do pressure_ping[j][i] += pressure_pong[j][i]
+				for j in 0..<grid_height do for i in 0..<grid_width do pressure_ping[1+j][1+i] += pressure_pong[1+j][1+i]
 
 				// Post-smooth Full
 				calc_iterate(&pressure_ping, &pressure_pong, divergence, post_smooth_level0, omega_smooth)
@@ -235,9 +238,9 @@ when true {
 
 		max_divergence, avg_divergence: f32
 		divergence_bins: [9]f64
-		for j in 1..<grid_height {
-			for i in 1..<grid_width {
-				d := abs(divergence[j][i])
+		for j in 0..<grid_height {
+			for i in 0..<grid_width {
+				d := abs(divergence[1+j][1+i])
 
 				logd := math.log(d, 10.0)
 
@@ -259,14 +262,14 @@ when true {
 
 
 		precision_bins: [32]f64
-		for j in 1..<grid_height {
-			for i in 1..<grid_width {
-				d := abs(divergence[j][i])
+		for j in 0..<grid_height {
+			for i in 0..<grid_width {
+				d := abs(divergence[1+j][1+i])
 				logd := math.log(d, 2.0)
 				precision_bins[clamp(int(logd + 25), 0, 31)] += 1.0
 			}
 		}
-		avg_divergence /= f32(grid_width-1)*f32(grid_height-1)
+		avg_divergence /= f32(grid_width)*f32(grid_height)
 
 		// Stream texture
 		{
@@ -372,8 +375,6 @@ when true {
 		}
 		sdl.RenderPresent(renderer);
 	}
-}
-
 }
 
 
