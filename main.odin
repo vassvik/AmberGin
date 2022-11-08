@@ -7,7 +7,6 @@ import "core:mem"
 import "core:math"
 import "core:math/linalg"
 import "core:strings"
-import "core:os"
 
 
 // Defining these will try to prefer discrete graphics over integrated graphics
@@ -34,27 +33,17 @@ free_2D :: proc(grid: [][]$T) {
 
 main :: proc() {
 	grid_width, grid_height: i32 = 255, 255
-	velocity_x_ping := make_2D(f32, grid_width+1, grid_height+0)
-	velocity_x_pong := make_2D(f32, grid_width+1, grid_height+0)
-	velocity_y_ping := make_2D(f32, grid_width+0, grid_height+1)
-	velocity_y_pong := make_2D(f32, grid_width+0, grid_height+1)
-	t := i32(5)
-	if true {
-		for j in grid_height/2-t..=grid_height/2+t {
-			for i in grid_width/2-t..=grid_height/2+t+1 {
-				velocity_x_ping[j][i] = -1.0
-				fmt.println(i, j)
-			}
-		}
-	} else {
-		for j in grid_height/2-t..=grid_height/2+t+1 {
-			for i in grid_width/2-t..=grid_height/2+t {
-				velocity_y_ping[j-100][i] = -1.0
-				fmt.println(i, j)
-			}
-		}
-	}
+	// Must be a multiple of 4 minus one, and must be larger than 4
+	//  7x7  ->  3x3  -> 1x1
+	// 11x11 ->  5x5  -> 2x2
+	// 15x15 ->  7x7  -> 3x3
+	// 19x19 -> 11x11 -> 4x4
+	assert(((grid_width + 1) % 4) == 0)
+	assert(((grid_height + 1) % 4) == 0)
+	assert(grid_width > 4)
+	assert(grid_height > 4)
 
+	// SDL setup
 	sdl.Init({.VIDEO, .TIMER})
 	defer sdl.Quit()
 
@@ -75,6 +64,15 @@ main :: proc() {
 	defer sdl.DestroyRenderer(renderer)
 	assert(renderer != nil)
 
+	display_texture := sdl.CreateTexture(renderer, u32(sdl.PixelFormatEnum.ABGR8888), .STREAMING, 2*grid_width, 2*grid_height)
+	defer sdl.DestroyTexture(display_texture)
+	assert(display_texture != nil)
+
+	// Grid setup
+	velocity_x_ping := make_2D(f32, grid_width+1, grid_height+0)
+	velocity_x_pong := make_2D(f32, grid_width+1, grid_height+0)
+	velocity_y_ping := make_2D(f32, grid_width+0, grid_height+1)
+	velocity_y_pong := make_2D(f32, grid_width+0, grid_height+1)
 
 	pressure_ping := make_2D(f32, grid_width+2, grid_height+2)
 	pressure_pong := make_2D(f32, grid_width+2, grid_height+2)
@@ -89,36 +87,28 @@ main :: proc() {
 	pressure_pong_quarter := make_2D(f32, (grid_width+1)/4-1+2, (grid_height+1)/4-1+2)
 	divergence_quarter    := make_2D(f32, (grid_width+1)/4-1+2, (grid_height+1)/4-1+2)
 
-	display_texture := sdl.CreateTexture(renderer, u32(sdl.PixelFormatEnum.ABGR8888), .STREAMING, 2*grid_width, 2*grid_height)
-	defer sdl.DestroyTexture(display_texture)
-	assert(display_texture != nil)
 
-
-	frame_timer := create_timer(64)
-	start_timer(&frame_timer)
-
-	display_write_timer      := create_timer(64)
-	debug_text_timer         := create_timer(64)
-	initial_divergence_timer := create_timer(64)
-	jacobi_timer             := create_timer(64)
-	multigrid_timer          := create_timer(64)
-	gradient_timer           := create_timer(64)
-	final_divergence_timer   := create_timer(64)
+	// Initialization
+	t := i32(10)
+	if true {
+		// Horizontal velocity
+		for j in grid_height/2-t..=grid_height/2+t {
+			for i in grid_width/2-t..=grid_height/2+t+1 {
+				velocity_x_ping[j][i] = -1.0
+			}
+		}
+	} 
+	if false {
+		// Vertical velocity
+		for j in grid_height/2-t..=grid_height/2+t+1 {
+			for i in grid_width/2-t..=grid_height/2+t {
+				velocity_y_ping[j][i] = -1.0
+			}
+		}
+	}
 
 	omega := 1.86
 	omega_smooth := 1.2
-
-	key_states: map[sdl.Scancode]bool
-	key_pressed: map[sdl.Scancode]bool
-
-	Multigrid_Level :: struct {
-		level: int,
-		iterations: int,
-		omega: f64,
-	}
-
-	iteration_index: int
-	iterations: [dynamic]int
 
 	pre_smooth_level0: int = 1
 	pre_smooth_level1: int = 1
@@ -126,8 +116,22 @@ main :: proc() {
 	post_smooth_level1: int = 4
 	post_smooth_level0: int = 4
 
+	// App state
 	should_quit := false
 	pressure_iterations := 0
+
+	key_states: map[sdl.Scancode]bool
+	key_pressed: map[sdl.Scancode]bool
+
+	frame_timer := create_timer(64)
+	start_timer(&frame_timer)
+
+	display_write_timer      := create_timer(64)
+	debug_text_timer         := create_timer(64)
+	initial_divergence_timer := create_timer(64)
+	multigrid_timer          := create_timer(64)
+	gradient_timer           := create_timer(64)
+	final_divergence_timer   := create_timer(64)
 
 	for frame := u32(0); !should_quit; frame += 1 {
 		stop_timer(&frame_timer)
@@ -148,6 +152,7 @@ main :: proc() {
 		}
 
 		{
+			// Input handing
 
 			if key_pressed[.ESCAPE] {
 				should_quit = true
@@ -250,6 +255,7 @@ main :: proc() {
 		calc_gradient(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_x_pong, velocity_y_pong, &gradient_timer)
 		calc_divergence(velocity_x_pong, velocity_y_pong, divergence, &final_divergence_timer)
 
+		// Stats
 		max_divergence, avg_divergence: f32
 		divergence_bins: [9]f64
 		for j in 0..<grid_height {
@@ -264,26 +270,17 @@ main :: proc() {
 				divergence_bins[clamp(int(math.floor(logd)) + 8, 0, 8)] += 1
 			}
 		}
-		max_bin, sum_bins: f64 = 0, 0
-		for i in 0..<9 {
-		 	max_bin = max(max_bin, divergence_bins[i])
-		 	sum_bins += divergence_bins[i]
-		}
+		avg_divergence /= f32(grid_width)*f32(grid_height)
 
 		if key_pressed[.TAB] {
+			sum_bins: f64 = 0
+			for i in 0..<9 {
+			 	sum_bins += divergence_bins[i]
+			}
+
 			fmt.printf("%+ 7f\n", 100*divergence_bins / sum_bins)
 		}
 
-
-		precision_bins: [32]f64
-		for j in 0..<grid_height {
-			for i in 0..<grid_width {
-				d := abs(divergence[1+j][1+i])
-				logd := math.log(d, 2.0)
-				precision_bins[clamp(int(logd + 25), 0, 31)] += 1.0
-			}
-		}
-		avg_divergence /= f32(grid_width)*f32(grid_height)
 
 		// Stream texture
 		{
@@ -373,18 +370,20 @@ main :: proc() {
 			defer stop_timer(&debug_text_timer)
 			cursor := i32(0)
 			text_color := sdl.Color{255, 255, 255, 255};
-			render_string(font, renderer, fmt.tprintf("Frame: %d\x00", frame), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Iterations: %d\x00", pressure_iterations), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Frame: %d\x00", frame), 0, cursor, text_color); cursor += 24
+
+			render_string(font, renderer, fmt.tprintf("V-Vycles: %d\x00", pressure_iterations), 0, cursor, text_color); cursor += 16
+			render_string(font, renderer, fmt.tprintf("Iterations: Pre: %d %d, Solve: %d, Post: %d %d\x00", pre_smooth_level0, pre_smooth_level1, solve_iter_level2, post_smooth_level1, post_smooth_level0), 0, cursor, text_color); cursor += 24
 			render_string(font, renderer, fmt.tprintf("Omega: Smooth: %f, Solve: %f\x00", omega_smooth, omega), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Iterations: Pre: %d %d, Solve: %d, Post: %d %d\x00", pre_smooth_level0, pre_smooth_level1, solve_iter_level2, post_smooth_level1, post_smooth_level0), 0, cursor, text_color); cursor += 16
+
+			render_string(font, renderer, fmt.tprintf("Divergence, Max: %.6e, Avg: %.6e\x00", max_divergence, avg_divergence), 0, cursor, text_color); cursor += 24
+			
 			render_string(font, renderer, fmt.tprintf("Frame              % 7f +/- %f (%f)\x00", frame_timer.average, frame_timer.std, frame_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Display Write      % 7f +/- %f (%f)\x00", display_write_timer.average, display_write_timer.std, display_write_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Initial Divergence % 7f +/- %f (%f)\x00", initial_divergence_timer.average, initial_divergence_timer.std, initial_divergence_timer.ste), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Jacobi             % 7f +/- %f (%f)\x00", jacobi_timer.average, jacobi_timer.std, jacobi_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Multigrid          % 7f +/- %f (%f)\x00", multigrid_timer.average, multigrid_timer.std, multigrid_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Gradient           % 7f +/- %f (%f)\x00", gradient_timer.average, gradient_timer.std, gradient_timer.ste), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Final Divergence   % 7f +/- %f (%f)\x00", final_divergence_timer.average, final_divergence_timer.std, final_divergence_timer.ste), 0, cursor, text_color); cursor += 16
-			render_string(font, renderer, fmt.tprintf("Divergence, Max: %.6e, Avg: %.6e\x00", max_divergence, avg_divergence), 0, cursor, text_color); cursor += 16
 			render_string(font, renderer, fmt.tprintf("Debug Text         % 7f +/- %f (%f)\x00", debug_text_timer.average, debug_text_timer.std, debug_text_timer.ste), 0, cursor, text_color); cursor += 16
 		}
 		sdl.RenderPresent(renderer);

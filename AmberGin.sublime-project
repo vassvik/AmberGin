@@ -1,0 +1,108 @@
+{
+	"folders": [
+		{
+			"name": "AmberGin Root",
+			"path": ".",
+		},
+	],
+	"build_systems": [
+    	{
+	    	"shell_cmd": "${project_path}/../Odin/odin.exe run . -show-timings -use-separate-modules",
+		    "file_regex": "(.*)[(]([0-9]+)[:]([0-9]+)*[)](.*)",
+		    "selector": "source.odin",
+		    "name": "AmberGin",
+			"working_dir": "${project_path:${folder}}",
+            "shell": true,
+
+		    "variants": [
+		    	// EmberGen specifics
+		        {
+		            "shell_cmd": "${project_path}/../Odin/odin.exe run . -show-timings -use-separate-modules",
+		            "name": "Build & Run"
+		        },
+		        {
+		            "shell_cmd": "${project_path}/../Odin/odin.exe build . -show-timings -use-separate-modules",
+		            "name": "Build"
+		        },
+		        {
+		            "shell_cmd": "AmberGin.exe",
+		            "name": "Run Only"
+		        },
+		        {
+		            "shell_cmd": "${project_path}/../Odin/odin.exe check . -show-timings",
+		            "name": "Check",
+		        },
+		        {
+		            "shell_cmd": "${project_path}/../Odin/odin.exe check . -vet -show-timings",
+		            "name": "Vet",
+		        },
+		        {
+		            "shell_cmd": "${project_path}/../Odin/odin.exe build . -o:speed -no-bounds-check -show-timings -use-separate-modules",
+		            "name": "Build Optimized"
+		        },
+
+		        // Debugging specifics
+		        {
+		            "shell_cmd": "${project_path}/../Odin/odin.exe build . -debug -show-timings",
+		            "name": "Build Debug"
+		        },
+		        {
+		            "shell_cmd": "${project_path}/../Odin/odin.exe build . -debug -o:speed -no-bounds-check -show-timings",
+		            "name": "Build Debug Optimized"
+		        },
+		        {
+		            "shell_cmd": "devenv /debugexe AmberGin.exe",
+		            "name": "Debug AmberGin.exe in Visual Studio"
+		        },
+		        {
+		            "shell_cmd": "devenv /edit $file",
+		            "name": "Open Current File in Visual Studio"
+		        },
+
+		        // Standalone File builds
+		        {
+		        	"working_dir": "${file_path}",
+		            "shell_cmd": "${project_path}/../Odin/odin.exe run $file -file -show-timings",
+		            "name": "Run Odin Standalone File",
+		        },
+		        {
+		        	"working_dir": "${file_path}",
+		            "shell_cmd": "${project_path}/../Odin/odin.exe run $file -file -show-timings -debug",
+		            "name": "Run Odin Standalone File Debug",
+		        },
+		        {
+		        	"working_dir": "${file_path}",
+		            "shell_cmd": "${project_path}/../Odin/odin.exe run $file -file -show-timings -o:speed -no-bounds-check",
+		            "name": "Run Odin Standalone File Optimized",
+		        },
+		        {
+		        	"working_dir": "${file_path}",
+		            "shell_cmd": "${project_path}/../Odin/odin.exe check $file -file -show-timings",
+		            "name": "Check Odin Standalone File",
+		        },
+
+		        // Standalone Package builds
+		        {
+		        	"working_dir": "${file_path}",
+		            "shell_cmd": "${project_path}/../Odin/odin.exe run . -show-timings",
+		            "name": "Run Odin Standalone Package",
+		        },
+		        {
+		        	"working_dir": "${file_path}",
+		            "shell_cmd": "${project_path}/../Odin/odin.exe run . -show-timings -debug",
+		            "name": "Run Odin Standalone Package Debug",
+		        },
+		        {
+		        	"working_dir": "${file_path}",
+		            "shell_cmd": "${project_path}/../Odin/odin.exe run . -show-timings -o:speed -no-bounds-check",
+		            "name": "Run Odin Standalone Package Optimized",
+		        },
+		        {
+		        	"working_dir": "${file_path}",
+		            "shell_cmd": "${project_path}/../Odin/odin.exe check . -show-timings",
+		            "name": "Check Odin Standalone Package",
+		        },
+		    ]
+		}
+    ]
+}

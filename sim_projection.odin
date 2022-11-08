@@ -6,15 +6,6 @@ calc_divergence :: proc(velocity_x, velocity_y: [][]f32, divergence: [][]f32, ti
 	grid_width := len(velocity_x[0]) - 1
 	grid_height := len(velocity_x)
 	
-	assert(len(velocity_x)    == grid_height)
-	assert(len(velocity_x[0]) == grid_width+1)
-
-	assert(len(velocity_y)    == grid_height+1)
-	assert(len(velocity_y[0]) == grid_width)
-
-	assert(len(divergence)    == grid_height+2)
-	assert(len(divergence[0]) == grid_width+2)
-
 	start_timer(timer)
 	defer stop_timer(timer)
 
@@ -43,9 +34,6 @@ clear_pressure :: proc(pressure_ping: [][]f32) {
 }
 
 calc_stencil_pressure :: proc(input, output, rhs: [][]f32, omega: f64, i, j: int) {
-	grid_width := len(input[0]) - 2
-	grid_height := len(input) - 2
-
 	pE := input[j][i+1]
 	pW := input[j][i-1]
 	pN := input[j+1][i]
@@ -61,8 +49,6 @@ calc_jacobi :: proc(pressure_ping, pressure_pong: ^[][]f32, divergence: [][]f32,
 
 	calc_iterate(pressure_ping, pressure_pong, divergence, iterations, omega_solve)
 }
-
-import "core:fmt"
 
 calc_iterate :: proc(pressure_ping, pressure_pong: ^[][]f32, divergence: [][]f32, iterations: int, omega_solve: f64) {
 	grid_width := len(pressure_ping[0]) - 2
@@ -120,11 +106,11 @@ calc_residual :: proc(pressure_ping, residual, divergence: [][]f32) {
 
 
 calc_gradient :: proc(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_x_pong, velocity_y_pong: [][]f32, timer: ^Timer($N)) {
-	grid_width := len(pressure_ping[0]) - 2
-	grid_height := len(pressure_ping) - 2
-
 	start_timer(timer)
 	defer stop_timer(timer)
+	
+	grid_width := len(pressure_ping[0]) - 2
+	grid_height := len(pressure_ping) - 2
 
 	// Calculate gradient x
 	for j in 0..<grid_height {
@@ -157,29 +143,23 @@ calc_gradient :: proc(pressure_ping, velocity_x_ping, velocity_y_ping, velocity_
 	0       1       2       3       *
 */
 calc_restriction :: proc(fine_grid: [][]f32, coarse_grid: [][]f32) {
-	fine_grid_width := len(fine_grid[0]) - 2
-	fine_grid_height := len(fine_grid) - 2
-
 	coarse_grid_width := len(coarse_grid[0]) - 2
 	coarse_grid_height := len(coarse_grid) - 2
 
-	assert((fine_grid_width+1) == (coarse_grid_width+1)*2)
-	assert((fine_grid_height+1) == (coarse_grid_height+1)*2)
-
-	for j in 0..<coarse_grid_height {
-		for i in 0..<coarse_grid_width {
-			rSW := fine_grid[2*(1+j)-1][2*(1+i)-1]
-			rS  := fine_grid[2*(1+j)-1][2*(1+i)+0]
-			rSE := fine_grid[2*(1+j)-1][2*(1+i)+1]
-			rW  := fine_grid[2*(1+j)+0][2*(1+i)-1]
-			rC  := fine_grid[2*(1+j)+0][2*(1+i)+0]
-			rE  := fine_grid[2*(1+j)+0][2*(1+i)+1]
-			rNW := fine_grid[2*(1+j)+1][2*(1+i)-1]
-			rN  := fine_grid[2*(1+j)+1][2*(1+i)+0]
-			rNE := fine_grid[2*(1+j)+1][2*(1+i)+1]
+	for j in 1..=coarse_grid_height {
+		for i in 1..=coarse_grid_width {
+			rSW := fine_grid[2*j-1][2*i-1]
+			rS  := fine_grid[2*j-1][2*i+0]
+			rSE := fine_grid[2*j-1][2*i+1]
+			rW  := fine_grid[2*j+0][2*i-1]
+			rC  := fine_grid[2*j+0][2*i+0]
+			rE  := fine_grid[2*j+0][2*i+1]
+			rNW := fine_grid[2*j+1][2*i-1]
+			rN  := fine_grid[2*j+1][2*i+0]
+			rNE := fine_grid[2*j+1][2*i+1]
 
 			r := (1.0 * (rSW + rSE + rNW + rNE) + 2.0 * (rS + rW + rE + rN) + 4.0 * rC) / 16.0
-			coarse_grid[1+j][1+i] = 4.0 * r
+			coarse_grid[j][i] = 4.0 * r
 		}
 	}
 }
@@ -194,18 +174,11 @@ calc_restriction :: proc(fine_grid: [][]f32, coarse_grid: [][]f32) {
 	0 1 2 3 4 5 6 7 8 9 A B C D E F *
 */
 calc_prolongation :: proc(coarse_grid: [][]f32, fine_grid: [][]f32) {
-	coarse_grid_width := len(coarse_grid[0]) - 2
-	coarse_grid_height := len(coarse_grid) - 2
-	
 	fine_grid_width := len(fine_grid[0]) - 2
 	fine_grid_height := len(fine_grid) - 2
 
-	assert((fine_grid_width+1) == (coarse_grid_width+1)*2)
-	assert((fine_grid_height+1) == (coarse_grid_height+1)*2)
-
 	for j in 1..=fine_grid_height {
 		for i in 1..=fine_grid_width {
-
 			e00 := coarse_grid[(j/2)+0*(j%2)][(i/2)+0*(i%2)]
 			e10 := coarse_grid[(j/2)+0*(j%2)][(i/2)+1*(i%2)]
 			e01 := coarse_grid[(j/2)+1*(j%2)][(i/2)+0*(i%2)]
